@@ -658,7 +658,17 @@
     <!-- Notification -->
     <div class="notification" id="notification"></div>
 
-    <script src="cafcoop_data.js"></script>
-    <script src="cafcoop_app.js"></script>
-</body>
+<script type="importmap">
+  {
+    "imports": {
+      "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
+    }
+  }
+</script>
+
+    <script type="module" src="cafcoop_data.js"></script>
+
+    <script type="module" src="cafcoop_app.js"></script>
+
 </html>

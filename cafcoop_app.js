@@ -2,6 +2,33 @@
  * cafcoop_app.js
  * Logique principale de l'application CAFCOOP
  */
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from "firebase/firestore";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAE2nCkmwfkdSelRshO79RP_6Zbqgbx32M",
+  authDomain: "cafcoop-app.firebaseapp.com",
+  projectId: "cafcoop-app",
+  storageBucket: "cafcoop-app.firebasestorage.app",
+  messagingSenderId: "428822928793",
+  appId: "1:428822928793:web:8716d85a22ce8e7090c708"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// ÉCOUTEUR TEMPS RÉEL (Style WhatsApp)
+onSnapshot(query(collection(db, "diagnostics"), orderBy("date", "desc")), (snapshot) => {
+    snapshot.docChanges().forEach((change) => {
+        // Si un nouveau diagnostic est ajouté et qu'on est en mode Personnel
+        if (change.type === "added" && AppState.role === 'personnel') {
+            const diag = change.doc.data();
+            afficherNotification(`🔔 Nouveau diagnostic de ${diag.producteur} (${diag.culture})`, 'info');
+            // Force le rafraîchissement de la vue si on est sur l'onglet diagnostic
+            if(AppState.currentTab === 'diagnostic') navigateTo('diagnostic');
+        }
+    });
+});
 
 // État global de l'application
 const AppState = {

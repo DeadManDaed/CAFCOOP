@@ -7,6 +7,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#2E7D32">
     <title>CAFCOOP - Application Mobile Agricole</title>
+    
+    <!-- TOUS VOS STYLES CONSERVÉS INTÉGRALEMENT -->
     <style>
         :root {
             --primary: #2E7D32;
@@ -28,7 +30,7 @@
             margin: 0;
             padding: 0;
         }
-        
+
         body {
             font-family: 'Segoe UI', Roboto, -apple-system, sans-serif;
             background: var(--bg);
@@ -53,22 +55,6 @@
             flex-direction: column;
             border: none;
         }
-
-        /* ENCOCHE iPhone - DÉSACTIVÉE pour Android */
-        /*
-        .phone-frame::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 150px;
-            height: 30px;
-            background: #333;
-            border-radius: 0 0 15px 15px;
-            z-index: 100;
-        }
-        */
 
         /* HEADER - OPTIMISÉ ANDROID */
         .app-header {
@@ -581,6 +567,40 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* LOGIN SCREEN (NOUVEAU) */
+        .login-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: calc(100vh - var(--nav-height) - 80px);
+            padding: 20px;
+        }
+
+        .login-logo {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+
+        .login-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+
+        .login-subtitle {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .login-form {
+            width: 100%;
+            max-width: 400px;
+        }
     </style>
 </head>
 <body>
@@ -607,7 +627,11 @@
 
         <!-- Zone de contenu -->
         <main class="content-area" id="main-content">
-            <!-- Le contenu sera injecté ici par JavaScript -->
+            <!-- Écran de chargement initial -->
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Chargement de CAFCOOP...</p>
+            </div>
         </main>
 
         <!-- FAB (Floating Action Button) -->
@@ -658,15 +682,9 @@
     <!-- Notification -->
     <div class="notification" id="notification"></div>
 
-<script type="importmap">
-  {
-    "imports": {
-      "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
-      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
-    }
-  }
-</script>
+    <!-- SUPABASE : Import via CDN ES Module -->
+    <script type="module" src="./supabase-client.js"></script>
+    <script type="module" src="./cafcoop_app.js"></script>
 
-    <script type="module" src="cafcoop_app.js"></script>
-
+</body>
 </html>

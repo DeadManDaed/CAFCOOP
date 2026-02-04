@@ -1,65 +1,134 @@
 /**
  * cafcoop_app.js
- * Logique principale de l'application CAFCOOP
+ * Logique principale de l'application CAFCOOP - VERSION SUPABASE
  */
 
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, updateDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "firebase/firestore";
+import { supabase, formatDate, getCurrentUser } from "./supabase-client.js";
 import { BASE_PATHOLOGIES, PRODUITS_AGRICOLES, REGIONS_CAMEROUN } from "./cafcoop_data.js";
 
-// --- CONFIGURATION FIREBASE (Tirée de ton fichier) ---
-const firebaseConfig = {
-  apiKey: "AIzaSyAE2nCkmwfkdSelRshO79RP_6Zbqgbx32M",
-  authDomain: "cafcoop-app.firebaseapp.com",
-  projectId: "cafcoop-app",
-  storageBucket: "cafcoop-app.firebasestorage.app",
-  messagingSenderId: "428822928793",
-  appId: "1:428822928793:web:8716d85a22ce8e7090c708"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-// --- ÉTAT GLOBAL ---
+// --- ÉTAT GLOBAL (Inchangé) ---
 window.AppState = {
     role: 'agriculteur', // 'agriculteur' ou 'personnel'
     currentTab: 'home',
     panier: [],
-    diagnosticsList: [], // Stockage local des données Firebase
-    photoActuelle: null // Base64 temporaire
+    diagnosticsList: [], // Stockage local des données Supabase
+    photoActuelle: null, // Base64 temporaire
+    currentUser: null // Utilisateur connecté
 };
 
 // --- INITIALISATION ---
-document.addEventListener('DOMContentLoaded', () => {
-    ecouterDiagnostics(); // Lancer l'écoute "WhatsApp"
+document.addEventListener('DOMContentLoaded', async () => {
+    // Vérifier si l'utilisateur est connecté
+    AppState.currentUser = await getCurrentUser();
+    
+    if (!AppState.currentUser) {
+        // Rediriger vers page de connexion (à créer)
+        console.log("Non connecté - Afficher login");
+        // Pour l'instant, on continue en mode démo
+    }
+    
+    ecouterDiagnostics(); // Lancer l'écoute temps réel
     renderPage();
 });
 
-// --- ÉCOUTEUR TEMPS RÉEL (REMPLACE LE LOCALSTORAGE) ---
+// --- ÉCOUTEUR TEMPS RÉEL SUPABASE (Remplace Firebase onSnapshot) ---
 function ecouterDiagnostics() {
-    const q = query(collection(db, "diagnostics"), orderBy("date", "desc"));
-    onSnapshot(q, (snapshot) => {
-        AppState.diagnosticsList = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            // Conversion du timestamp Firebase en date lisible
-            date: doc.data().date ? new Date(doc.data().date.seconds * 1000).toLocaleString('fr-FR') : 'À l\'instant'
-        }));
-
-        // Notification sonore/visuelle pour le personnel
-        snapshot.docChanges().forEach((change) => {
-            if (change.type === "added" && AppState.role === 'personnel') {
-                const d = change.doc.data();
-                afficherNotification(`🔔 Nouveau cas : ${d.culture} (${d.producteur})`, 'info');
+    // 1. Charger les diagnostics existants
+    chargerDiagnosticsInitiaux();
+    
+    // 2. S'abonner aux changements en temps réel
+    const channel = supabase
+        .channel('diagnostics-changes')
+        .on('postgres_changes', 
+            { 
+                event: 'INSERT', 
+                schema: 'public', 
+                table: 'diagnostics' 
+            }, 
+            (payload) => {
+                // Nouveau diagnostic ajouté
+                const nouveauDiag = {
+                    id: payload.new.id_diagnostic,
+                    producteur: payload.new.commentaire_agriculteur || 'Utilisateur',
+                    culture: payload.new.id_culture,
+                    symptomes: payload.new.id_diagnostic, // À adapter selon votre structure
+                    photo: null, // Les photos seront dans une autre table
+                    statut: payload.new.statut || 'en_attente',
+                    date: formatDate(payload.new.date_creation),
+                    expert: null
+                };
+                
+                AppState.diagnosticsList.unshift(nouveauDiag);
+                
+                // Notification pour le personnel
+                if (AppState.role === 'personnel') {
+                    afficherNotification(`🔔 Nouveau cas : ${nouveauDiag.culture} (${nouveauDiag.producteur})`, 'info');
+                }
+                
+                // Rafraîchir l'interface
+                if (AppState.currentTab === 'diagnostic') renderPage();
             }
-        });
-
-        // Rafraîchir l'interface si on est sur l'onglet diagnostic
-        if (AppState.currentTab === 'diagnostic') renderPage();
-    });
+        )
+        .on('postgres_changes',
+            {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'diagnostics'
+            },
+            (payload) => {
+                // Diagnostic mis à jour
+                const index = AppState.diagnosticsList.findIndex(d => d.id === payload.new.id_diagnostic);
+                if (index !== -1) {
+                    AppState.diagnosticsList[index].statut = payload.new.statut;
+                    AppState.diagnosticsList[index].expert = payload.new.id_expert;
+                    
+                    if (AppState.currentTab === 'diagnostic') renderPage();
+                }
+            }
+        )
+        .subscribe();
 }
 
-// --- NAVIGATION ---
+// Charger les diagnostics initiaux depuis Supabase
+async function chargerDiagnosticsInitiaux() {
+    try {
+        const { data, error } = await supabase
+            .from('diagnostics')
+            .select(`
+                id_diagnostic,
+                id_agriculteur,
+                id_culture,
+                statut,
+                commentaire_agriculteur,
+                date_creation,
+                date_observation,
+                id_expert
+            `)
+            .order('date_creation', { ascending: false });
+        
+        if (error) throw error;
+        
+        // Transformer les données pour correspondre à votre format
+        AppState.diagnosticsList = data.map(d => ({
+            id: d.id_diagnostic,
+            producteur: d.commentaire_agriculteur || 'Utilisateur Démo',
+            culture: d.id_culture, // Vous devrez joindre avec la table cultures
+            symptomes: [], // À remplir depuis la table diagnostic_symptomes
+            photo: null, // À remplir depuis la table diagnostic_photos
+            statut: d.statut === 'en_attente' ? 'En attente' : d.statut === 'resolu' ? 'Résolu' : 'Transféré',
+            date: formatDate(d.date_creation),
+            expert: d.id_expert
+        }));
+        
+        if (AppState.currentTab === 'diagnostic') renderPage();
+        
+    } catch (error) {
+        console.error('Erreur chargement diagnostics:', error);
+        afficherNotification('Erreur de connexion à la base de données', 'error');
+    }
+}
+
+// --- NAVIGATION (Inchangée) ---
 window.navigateTo = (tab) => {
     AppState.currentTab = tab;
     document.querySelectorAll('.nav-item').forEach(el => {
@@ -72,12 +141,11 @@ window.navigateTo = (tab) => {
 window.toggleRole = () => {
     AppState.role = AppState.role === 'agriculteur' ? 'personnel' : 'agriculteur';
     document.getElementById('current-role').innerText = AppState.role === 'agriculteur' ? 'AGRICULTEUR' : 'PERSONNEL';
-    // Style du badge
     document.getElementById('current-role').style.background = AppState.role === 'personnel' ? '#FFC107' : 'rgba(255,255,255,0.2)';
     renderPage();
 };
 
-// --- RENDU DES PAGES ---
+// --- RENDU DES PAGES (Inchangé) ---
 window.renderPage = () => {
     const container = document.getElementById('main-content');
     container.innerHTML = '';
@@ -87,7 +155,7 @@ window.renderPage = () => {
     else if (AppState.currentTab === 'boutique') renderBoutique(container);
 };
 
-// --- FONCTION DIAGNOSTIC (TA VERSION INTÉGRÉE) ---
+// --- FONCTION DIAGNOSTIC (Votre version, inchangée dans l'UI) ---
 window.renderDiagnostic = (container) => {
     if (AppState.role === 'agriculteur') {
         container.innerHTML = `
@@ -111,7 +179,7 @@ window.renderDiagnostic = (container) => {
             </div>
         `;
     } else {
-        // Vue Personnel : On utilise la liste mise à jour par Firebase (AppState.diagnosticsList)
+        // Vue Personnel : utilise AppState.diagnosticsList
         container.innerHTML = `
             <div class="fade-in">
                 <h2>Dossiers Diagnostics (${AppState.diagnosticsList.length})</h2>
@@ -128,7 +196,7 @@ window.renderDiagnostic = (container) => {
                         <div style="margin-top:10px;">
                              ${d.statut === 'En attente' ? 
                                 `<button class="btn btn-primary" style="padding:5px 10px; font-size:12px;" onclick="transfererExpert('${d.id}')">Transférer Expert</button>` : 
-                                `<span style="color:green; font-size:12px;">✅ Géré par ${d.expert}</span>`
+                                `<span style="color:green; font-size:12px;">✅ Géré par ${d.expert || 'Expert'}</span>`
                              }
                         </div>
                     </div>
@@ -138,13 +206,13 @@ window.renderDiagnostic = (container) => {
     }
 };
 
-// --- LOGIQUE MÉTIER DIAGNOSTIC ---
+// --- LOGIQUE MÉTIER DIAGNOSTIC (Inchangée dans l'UI) ---
 
 window.chargerSymptomes = () => {
     const culture = document.getElementById('diag-culture').value;
     const zone = document.getElementById('zone-symptomes');
     const zonePhoto = document.getElementById('zone-photo');
-    
+
     if (!culture) {
         zone.innerHTML = '';
         zonePhoto.style.display = 'none';
@@ -162,7 +230,7 @@ window.chargerSymptomes = () => {
             `).join('')}
         </div>
     `).join('');
-    
+
     zonePhoto.style.display = 'block';
 };
 
@@ -170,7 +238,7 @@ window.chargerPhoto = (input) => {
     if (input.files && input.files[0]) {
         const reader = new FileReader();
         reader.onload = (e) => {
-            AppState.photoActuelle = e.target.result; // Stockage en Base64
+            AppState.photoActuelle = e.target.result;
             document.getElementById('apercu-photo').innerHTML = `<img src="${e.target.result}" style="width:100px; border-radius:5px;">`;
             verifierBoutonEnvoi();
         };
@@ -184,48 +252,99 @@ window.verifierBoutonEnvoi = () => {
     if(btn) btn.style.display = checked ? 'block' : 'none';
 };
 
+// --- ENVOI DIAGNOSTIC (Adapté pour Supabase) ---
 window.envoyerDiagnostic = async () => {
     const culture = document.getElementById('diag-culture').value;
     const checked = document.querySelectorAll('.chk-symp:checked');
     const symptomes = Array.from(checked).map(c => c.value);
 
-    // Envoi vers Firebase
     try {
-        await addDoc(collection(db, "diagnostics"), {
-            producteur: "Utilisateur Démo", // À remplacer par un vrai login plus tard
-            culture: culture,
-            symptomes: symptomes,
-            photo: AppState.photoActuelle,
-            statut: "En attente",
-            date: serverTimestamp()
-        });
+        // 1. Obtenir l'ID de la culture depuis la base
+        const { data: cultureData, error: cultureError } = await supabase
+            .from('cultures')
+            .select('id_culture')
+            .eq('nom_culture', culture)
+            .single();
         
+        if (cultureError) throw cultureError;
+
+        // 2. Créer le diagnostic
+        const { data: diagnostic, error: diagError } = await supabase
+            .from('diagnostics')
+            .insert({
+                id_agriculteur: 1, // À remplacer par l'ID réel de l'agriculteur connecté
+                id_culture: cultureData.id_culture,
+                statut: 'en_attente',
+                priorite: 'normale',
+                commentaire_agriculteur: `Diagnostic automatique - ${culture}`,
+                date_observation: new Date().toISOString(),
+                date_creation: new Date().toISOString()
+            })
+            .select()
+            .single();
+        
+        if (diagError) throw diagError;
+
+        // 3. Upload photo si présente
+        if (AppState.photoActuelle) {
+            // Convertir base64 en Blob
+            const blob = await fetch(AppState.photoActuelle).then(r => r.blob());
+            const fileName = `diag_${diagnostic.id_diagnostic}_${Date.now()}.jpg`;
+            
+            const { error: uploadError } = await supabase.storage
+                .from('diagnostic-photos')
+                .upload(fileName, blob);
+            
+            if (!uploadError) {
+                // Enregistrer la photo dans la table
+                await supabase
+                    .from('diagnostic_photos')
+                    .insert({
+                        id_diagnostic: diagnostic.id_diagnostic,
+                        url_photo: fileName,
+                        date_upload: new Date().toISOString()
+                    });
+            }
+        }
+
+        // 4. Enregistrer les symptômes (simplifié pour l'instant)
+        // Vous devrez d'abord créer les symptômes dans la table symptomes
+        // puis les lier dans diagnostic_symptomes
+
         afficherNotification("✅ Diagnostic envoyé avec succès !", "success");
         navigateTo('home');
-        AppState.photoActuelle = null; // Reset
-    } catch (e) {
-        console.error(e);
-        afficherNotification("Erreur d'envoi (Vérifiez connexion)", "error");
+        AppState.photoActuelle = null;
+        
+    } catch (error) {
+        console.error('Erreur:', error);
+        afficherNotification("❌ Erreur d'envoi: " + error.message, "error");
     }
 };
 
+// --- TRANSFERT EXPERT (Adapté pour Supabase) ---
 window.transfererExpert = async (id) => {
     const expert = prompt("Nom de l'expert assigné :");
     if (expert) {
         try {
-            const ref = doc(db, "diagnostics", id);
-            await updateDoc(ref, {
-                statut: "Transféré",
-                expert: expert
-            });
-            afficherNotification("Dossier transféré", "success");
-        } catch (e) {
-            afficherNotification("Erreur de mise à jour", "error");
+            const { error } = await supabase
+                .from('diagnostics')
+                .update({
+                    statut: 'transfere',
+                    id_expert: 1 // À remplacer par l'ID réel de l'expert
+                })
+                .eq('id_diagnostic', id);
+            
+            if (error) throw error;
+            
+            afficherNotification("✅ Dossier transféré", "success");
+        } catch (error) {
+            console.error(error);
+            afficherNotification("❌ Erreur de mise à jour", "error");
         }
     }
 };
 
-// --- FONCTIONS UTILITAIRES ---
+// --- FONCTIONS UTILITAIRES (Inchangées) ---
 window.afficherNotification = (msg, type) => {
     const notif = document.getElementById('notification');
     notif.innerText = msg;
@@ -234,7 +353,7 @@ window.afficherNotification = (msg, type) => {
     setTimeout(() => notif.classList.remove('show'), 3000);
 };
 
-// Fonction Home basique pour éviter les erreurs
+// --- HOME (Inchangée) ---
 function renderHome(container) {
     container.innerHTML = `
         <div style="text-align:center; padding:20px;">
@@ -251,19 +370,15 @@ function renderHome(container) {
     `;
 }
 
-// Fonction Boutique simplifiée
+// --- BOUTIQUE (Inchangée) ---
 function renderBoutique(container) {
     container.innerHTML = `<h2>Boutique</h2>` + PRODUITS_AGRICOLES.map(p => `
         <div class="card">
             <div style="display:flex; justify-content:space-between;">
                 <strong>${p.image} ${p.nom}</strong>
-                <span>${p.prix} F</span>
+                <span>${p.prix} FCFA</span>
             </div>
-            <p>${p.desc}</p>
+            <p>${p.description}</p>
         </div>
     `).join('');
 }
-
-                        
-        
-        

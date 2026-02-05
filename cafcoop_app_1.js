@@ -3,6 +3,9 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+import { supabase, formatDate, getCurrentUser } from "./supabase-client.js";
+import { BASE_PATHOLOGIES, PRODUITS_AGRICOLES, REGIONS_CAMEROUN } from "./cafcoop_data.js";
+
 // --- CONFIGURATION ---
 // Sur Vercel, ces variables doivent être configurées dans Settings > Environment Variables
 const supabase = createClient(

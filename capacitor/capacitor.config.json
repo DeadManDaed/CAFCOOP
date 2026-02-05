@@ -1,0 +1,17 @@
+{
+  "appId": "com.cafcoop.app",
+  "appName": "CAFCOOP",
+  "webDir": "out",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "",
+    "cleartext": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 300,
+      "launchAutoHide": true,
+      "backgroundColor": "#ffffffff"
+    }
+  }
+}

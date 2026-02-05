@@ -17,17 +17,18 @@ if (process.env.NODE_ENV === 'production') {
 
 module.exports = withPWA({
   reactStrictMode: true,
-  // ⚠️ swcMinify supprimé (obsolète)
   images: {
-    // ⚠️ images.domains remplacé par remotePatterns
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**', // autorise toutes les sources https
+        hostname: '**',
         pathname: '/**'
       }
     ],
     formats: ['image/avif', 'image/webp']
   },
-  i18n: { locales: ['fr', 'en'], defaultLocale: 'fr' }
+  i18n: { 
+    locales: ['fr', 'en'], 
+    defaultLocale: 'fr' 
+  }
 })

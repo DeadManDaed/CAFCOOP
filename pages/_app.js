@@ -1,11 +1,12 @@
-// pages/_app.js
+// C'est cette ligne qui fait la magie !
+import '../styles/globals.css' 
 import { useEffect } from 'react'
-import '../styles/globals.css'
 
 function MyApp({ Component, pageProps }) {
   useEffect(() => {
+    // Enregistrement du Service Worker pour le mode Hors-ligne (PWA)
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(console.error)
+      navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW fail', err))
     }
   }, [])
 

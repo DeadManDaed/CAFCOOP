@@ -527,22 +527,3 @@ function renderProfil(container) {
                 <p><strong>Rôle:</strong> ${AppState.role}</p>
             </div>
         </div>
-    `;
-}
-
-// --- UTILITAIRES ---
-window.afficherNotification = (msg, type) => {
-    const n = document.getElementById('notification');
-    n.innerText = msg;
-    n.style.backgroundColor = type === 'error' ? '#D32F2F' : type === 'success' ? '#388E3C' : '#333';
-    n.classList.add('show');
-    setTimeout(() => n.classList.remove('show'), 3000);
-};
-
-window.closeModal = () => {
-    document.getElementById('modal').classList.remove('active');
-};
-
-window.fabAction = () => {
-    navigateTo('diagnostic');
-};

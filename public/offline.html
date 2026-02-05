@@ -1,22 +1,40 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>CAFCOOP hors ligne</title>
-  <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin:0; display:flex; align-items:center; justify-content:center; height:100vh; background:#f7f7f7; color:#222; }
-    .card { max-width:420px; padding:28px; border-radius:12px; background:white; box-shadow:0 6px 24px rgba(0,0,0,0.08); text-align:center; }
-    h1 { margin:0 0 8px; font-size:20px; }
-    p { margin:0 0 16px; color:#555; }
-    .btn { display:inline-block; padding:10px 16px; border-radius:8px; background:#0a7; color:white; text-decoration:none; font-weight:600; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAFCOOP - Hors ligne</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #2E7D32 0%, #1B5E20 100%);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            text-align: center;
+            padding: 20px;
+        }
+        .offline-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+    </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Tu es hors ligne</h1>
-    <p>CAFCOOP n’a pas pu se connecter au réseau. Certaines fonctionnalités peuvent être limitées.</p>
-    <a class="btn" href="/">Réessayer</a>
-  </div>
+    <div class="offline-icon">📡</div>
+    <h1>Pas de connexion</h1>
+    <p>CAFCOOP nécessite une connexion Internet.<br>Veuillez réessayer plus tard.</p>
 </body>
 </html>

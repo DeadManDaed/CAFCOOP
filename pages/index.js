@@ -1,107 +1,96 @@
-// pages/index.js
 import Head from 'next/head'
-import { useEffect } from 'react'
+import Script from 'next/script'
 
 export default function Home() {
-  // Le service worker est déjà enregistré dans _app.js,
-  // on garde ce useEffect uniquement si tu veux un log local supplémentaire.
-  useEffect(() => {
-    // petit check optionnel pour debug
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then(() => {
-        console.log('Service Worker actif (page index).')
-      }).catch(() => {})
-    }
-  }, [])
-
   return (
     <>
       <Head>
-        <title>CAFCOOP - Application Mobile Agricole</title>
+        <title>CAFCOOP App</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+        <meta name="theme-color" content="#2E7D32" />
       </Head>
 
-      {/* Contrôles de démonstration */}
-      <div className="demo-controls">
-        <button className="switch-role" onClick={() => window.toggleRole?.()}>🔄 Changer Vue</button>
-      </div>
-
-      {/* Cadre du téléphone */}
+      {/* Structure correspondant exactement à ton CSS styles/globals.css */}
       <div className="phone-frame">
-        {/* Header */}
+        
+        {/* HEADER */}
         <header className="app-header">
           <div className="header-content">
             <div className="app-title">
-              <span>🍃</span>
-              <span>CAFCOOP</span>
+              <span>🍃</span> CAFCOOP
             </div>
-            <div className="role-badge" id="current-role" onClick={() => window.toggleRole?.()}>
-              AGRICULTEUR
+            {/* Le badge de rôle (cliquable pour changer) */}
+            <div id="current-role" className="role-badge">
+              Chargement...
             </div>
           </div>
         </header>
 
-        {/* Zone de contenu */}
-        <main className="content-area" id="main-content">
+        {/* ZONE DE CONTENU PRINCIPAL */}
+        <main id="main-content" className="content-area">
           <div className="loading">
-            <div className="spinner" />
-            <p>Chargement de CAFCOOP...</p>
+             <div className="spinner"></div>
+             Chargement de CAFCOOP...
           </div>
         </main>
 
-        {/* FAB */}
-        <div className="fab" id="fab-action" onClick={() => window.fabAction?.()}>📸</div>
-
-        {/* Résumé du panier */}
-        <div id="cart-summary">
-          <div>
-            <span className="cart-count" id="cart-count">0</span>
-            <span style={{ marginLeft: '8px' }}>article(s)</span>
-          </div>
-          <div>
-            <strong id="cart-total">0 FCFA</strong>
-          </div>
-          <button
-            className="btn btn-secondary"
-            onClick={() => window.viewCart?.()}
-            style={{ width: 'auto', padding: '8px 16px', margin: 0 }}
-          >
-            Voir le panier
-          </button>
+        {/* BOUTON FLOTTANT (FAB) - Pour la caméra */}
+        <div id="fab-camera" className="fab">
+          📷
         </div>
 
-        {/* Navigation */}
+        {/* BARRE DE NAVIGATION DU BAS */}
         <nav className="bottom-nav">
-          <div className="nav-item active" onClick={() => window.navigateTo?.('home')} data-tab="home">
+          <div className="nav-item active" data-target="accueil">
             <span className="nav-icon">🏠</span>
             <span>Accueil</span>
           </div>
-          <div className="nav-item" onClick={() => window.navigateTo?.('boutique')} data-tab="boutique">
+          <div className="nav-item" data-target="boutique">
             <span className="nav-icon">🛒</span>
             <span>Boutique</span>
           </div>
-          <div className="nav-item" onClick={() => window.navigateTo?.('diagnostic')} data-tab="diagnostic">
-            <span className="nav-icon">🩺</span>
-            <span>Diagnostic</span>
+          <div className="nav-item" data-target="diagnostic">
+             <span className="nav-icon">🩺</span>
+             <span>Diagnostic</span>
           </div>
-          <div className="nav-item" onClick={() => window.navigateTo?.('profil')} data-tab="profil">
+          <div className="nav-item" data-target="profil">
             <span className="nav-icon">👤</span>
             <span>Profil</span>
           </div>
         </nav>
+
+        {/* RÉSUMÉ PANIER FLOTTANT */}
+        <div id="cart-summary" className="cart-summary">
+            <span>Votre Panier</span>
+            <span className="cart-count"><span id="cart-count">0</span> art.</span>
+        </div>
+
+        {/* MODALE GÉNÉRIQUE */}
+        <div id="app-modal" className="modal">
+            <div className="modal-content">
+                <div className="modal-header">
+                    <h3 id="modal-title" className="modal-title">Titre</h3>
+                    <span id="close-modal" className="close-modal">&times;</span>
+                </div>
+                <div id="modal-body">
+                    {/* Le contenu sera injecté par JS */}
+                </div>
+            </div>
+        </div>
+
+        {/* NOTIFICATION TOAST */}
+        <div id="notification" className="notification">
+            Message de notification
+        </div>
+
       </div>
 
-      {/* Modal */}
-      <div className="modal" id="modal">
-        <div className="modal-content" id="modal-content"></div>
-      </div>
-
-      {/* Notification */}
-      <div className="notification" id="notification"></div>
-
-      {/* Chargement des scripts client depuis public/js */}
-      <script type="module" src="/js/cafcoop_data.js"></script>
-      <script type="module" src="/js/supabase-client.js"></script>
-      <script type="module" src="/js/cafcoop_app.js"></script>
+      {/* CHARGEMENT DU SCRIPT PRINCIPAL */}
+      {/* On utilise 'defer' implicitement avec strategy="afterInteractive" */}
+      <Script 
+        src="/js/cafcoop_app.js" 
+        strategy="afterInteractive" 
+      />
     </>
   )
 }

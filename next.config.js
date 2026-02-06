@@ -1,5 +1,5 @@
 // next.config.js
-let withPWA = (config) => config
+/*let withPWA = (config) => config
 
 if (process.env.NODE_ENV === 'production') {
   try {
@@ -32,3 +32,9 @@ module.exports = withPWA({
     defaultLocale: 'fr' 
   }
 })
+*/
+
+module.exports = {
+  reactStrictMode: true,
+}
+

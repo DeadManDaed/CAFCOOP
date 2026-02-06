@@ -6,7 +6,7 @@ const withPWA = nextPwa({
   dest: 'public',
   register: true,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === 'development', // Désactivé en dev pour faciliter le debug
+  disable: process.env.NODE_ENV === 'development',
   fallbacks: {
     document: '/offline.html',
   },
@@ -18,7 +18,7 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**', // Autorise toutes les images HTTPS (utile pour tes données distantes)
+        hostname: '**',
       },
     ],
     formats: ['image/avif', 'image/webp'],
@@ -26,12 +26,6 @@ const nextConfig = {
   i18n: {
     locales: ['fr', 'en'],
     defaultLocale: 'fr',
-  },
-  // On garde une trace minimale du diagnostic si besoin, mais on nettoie le reste
-  logging: {
-    fetches: {
-      fullUrl: true,
-    },
   },
 };
 

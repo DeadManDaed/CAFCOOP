@@ -88,10 +88,9 @@ export default function Home() {
       {/* Notification */}
       <div className="notification" id="notification"></div>
 
-      {/* Scripts - Chargement correct pour Next.js */}
-      <Script src="../public/js/cafcoop_data.js" type="module" strategy="afterInteractive" />
-      <Script src="../lib/supabase-client.js" type="module" strategy="afterInteractive" />
-      <Script src="../public/js/cafcoop_app.js" type="module" strategy="lazyOnload" />
+      <Script src="/js/cafcoop_data.js" type="module" strategy="afterInteractive" />
+<Script src="/js/supabase-client.js" type="module" strategy="afterInteractive" />
+<Script src="/js/cafcoop_app.js" type="module" strategy="lazyOnload" />
     </>
   )
 }

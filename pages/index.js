@@ -1,3 +1,4 @@
+// pages/index.js
 import Head from 'next/head'
 import Script from 'next/script'
 
@@ -5,92 +6,92 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>CAFCOOP App</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
-        <meta name="theme-color" content="#2E7D32" />
+        <title>CAFCOOP - Application Mobile Agricole</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
       </Head>
 
-      {/* Structure correspondant exactement à ton CSS styles/globals.css */}
+      {/* Contrôles de démonstration */}
+      <div className="demo-controls">
+        <button className="switch-role" onClick={() => window.toggleRole?.()}>🔄 Changer Vue</button>
+      </div>
+
+      {/* Cadre du téléphone */}
       <div className="phone-frame">
-        
-        {/* HEADER */}
+        {/* Header */}
         <header className="app-header">
           <div className="header-content">
             <div className="app-title">
-              <span>🍃</span> CAFCOOP
+              <span>🍃</span>
+              <span>CAFCOOP</span>
             </div>
-            {/* Le badge de rôle (cliquable pour changer) */}
-            <div id="current-role" className="role-badge">
-              Chargement...
+            <div className="role-badge" id="current-role" onClick={() => window.toggleRole?.()}>
+              AGRICULTEUR
             </div>
           </div>
         </header>
 
-        {/* ZONE DE CONTENU PRINCIPAL */}
-        <main id="main-content" className="content-area">
+        {/* Zone de contenu */}
+        <main className="content-area" id="main-content">
           <div className="loading">
-             <div className="spinner"></div>
-             Chargement de CAFCOOP...
+            <div className="spinner" />
+            <p>Chargement de CAFCOOP...</p>
           </div>
         </main>
 
-        {/* BOUTON FLOTTANT (FAB) - Pour la caméra */}
-        <div id="fab-camera" className="fab">
-          📷
+        {/* FAB */}
+        <div className="fab" id="fab-action" onClick={() => window.fabAction?.()}>📸</div>
+
+        {/* Résumé du panier */}
+        <div id="cart-summary">
+          <div>
+            <span className="cart-count" id="cart-count">0</span>
+            <span style={{ marginLeft: '8px' }}>article(s)</span>
+          </div>
+          <div>
+            <strong id="cart-total">0 FCFA</strong>
+          </div>
+          <button
+            className="btn btn-secondary"
+            onClick={() => window.viewCart?.()}
+            style={{ width: 'auto', padding: '8px 16px', margin: 0 }}
+          >
+            Voir le panier
+          </button>
         </div>
 
-        {/* BARRE DE NAVIGATION DU BAS */}
+        {/* Navigation */}
         <nav className="bottom-nav">
-          <div className="nav-item active" data-target="accueil">
+          <div className="nav-item active" onClick={() => window.navigateTo?.('home')} data-tab="home">
             <span className="nav-icon">🏠</span>
             <span>Accueil</span>
           </div>
-          <div className="nav-item" data-target="boutique">
+          <div className="nav-item" onClick={() => window.navigateTo?.('boutique')} data-tab="boutique">
             <span className="nav-icon">🛒</span>
             <span>Boutique</span>
           </div>
-          <div className="nav-item" data-target="diagnostic">
-             <span className="nav-icon">🩺</span>
-             <span>Diagnostic</span>
+          <div className="nav-item" onClick={() => window.navigateTo?.('diagnostic')} data-tab="diagnostic">
+            <span className="nav-icon">🩺</span>
+            <span>Diagnostic</span>
           </div>
-          <div className="nav-item" data-target="profil">
+          <div className="nav-item" onClick={() => window.navigateTo?.('profil')} data-tab="profil">
             <span className="nav-icon">👤</span>
             <span>Profil</span>
           </div>
         </nav>
-
-        {/* RÉSUMÉ PANIER FLOTTANT */}
-        <div id="cart-summary" className="cart-summary">
-            <span>Votre Panier</span>
-            <span className="cart-count"><span id="cart-count">0</span> art.</span>
-        </div>
-
-        {/* MODALE GÉNÉRIQUE */}
-        <div id="app-modal" className="modal">
-            <div className="modal-content">
-                <div className="modal-header">
-                    <h3 id="modal-title" className="modal-title">Titre</h3>
-                    <span id="close-modal" className="close-modal">&times;</span>
-                </div>
-                <div id="modal-body">
-                    {/* Le contenu sera injecté par JS */}
-                </div>
-            </div>
-        </div>
-
-        {/* NOTIFICATION TOAST */}
-        <div id="notification" className="notification">
-            Message de notification
-        </div>
-
       </div>
 
-      {/* CHARGEMENT DU SCRIPT PRINCIPAL */}
-      {/* On utilise 'defer' implicitement avec strategy="afterInteractive" */}
-      <Script 
-        src="/js/cafcoop_app.js" 
-        strategy="afterInteractive" 
-      />
+      {/* Modal */}
+      <div className="modal" id="modal">
+        <div className="modal-content" id="modal-content"></div>
+      </div>
+
+      {/* Notification */}
+      <div className="notification" id="notification"></div>
+
+      {/* Scripts - Chargement correct pour Next.js */}
+      <Script src="/js/cafcoop_data.js" type="module" strategy="afterInteractive" />
+      <Script src="/js/supabase-client.js" type="module" strategy="afterInteractive" />
+      <Script src="/js/cafcoop_app.js" type="module" strategy="lazyOnload" />
     </>
   )
 }

@@ -1,5 +1,5 @@
 //pages/_app.js
-import '../styles/main.css' // Importation du CSS que nous avons réparé
+//import '../styles/main.css' // Importation du CSS que nous avons réparé
 import Head from 'next/head'
 
 function MyApp({ Component, pageProps }) {

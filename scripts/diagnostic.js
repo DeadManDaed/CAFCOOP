@@ -26,7 +26,7 @@ const requiredFiles = [
   'pages/api/supabase-config.js',
   'public/js/cafcoop_app.js',
   'public/js/cafcoop_data.js',
-  'public/js/supabase-client.js',
+  'lib/supabase-client.js',
   'public/manifest.json',
   'public/sw.js',
   'styles/globals.css'

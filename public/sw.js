@@ -12,7 +12,7 @@ const urlsToCache = [
   // Assure-toi que ce chemin correspond exactement à l'endroit où tu as mis le fichier
   '/js/cafcoop_app.js',
   '/js/cafcoop_data.js',
-  '/js/supabase-client.js',
+  '../lib/supabase-client.js',
   '/manifest.json'
 ]
 

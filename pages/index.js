@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { getSupabase, formatDate, getCurrentUser } from '../public/js/supabase-client';
+import { getSupabase, formatDate, getCurrentUser } from '../lib/supabase-client';
 import { REGIONS_CAMEROUN, BASE_PATHOLOGIES, PRODUITS_AGRICOLES } from '../public/js/cafcoop_data';
 
 export default function Home() {

@@ -8,7 +8,7 @@ export default function Document() {
         <meta name="description" content="CAFCOOP - Application agricole du Cameroun" />
         <meta name="theme-color" content="#2E7D32" />
         <link rel="manifest" href="/manifest.json" />
-<link rel="stylesheet" href="%PUBLIC_URL%/css/main.css"/>
+<link rel="stylesheet" href="public/css/main.css"/>
 
         <link rel="icon" href="/favicon.ico" />
       </Head>

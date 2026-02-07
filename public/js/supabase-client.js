@@ -1,4 +1,4 @@
-// pages/api/supabase-config.js
+// public/js/supabase-client.js
 // API serverless pour exposer la configuration Supabase au client
 
 export default function handler(req, res) {

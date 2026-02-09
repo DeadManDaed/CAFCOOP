@@ -30,6 +30,8 @@ function MyApp({ Component, pageProps }) {
 }
 
 export default MyApp
+
+*/
 */
 // pages/_app.js
 import { useEffect } from 'react';

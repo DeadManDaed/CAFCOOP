@@ -223,20 +223,42 @@ export default function Home() {
       </Head>
 
       {/* HEADER */}
-      <header className="app-header">
-        <div className="header-content">
-          <div className="app-title">
-            <span>🍃</span> CAFCOOP
-          </div>
-          <div 
-            className="role-badge" 
-            onClick={() => setRole(role === 'agriculteur' ? 'personnel' : 'agriculteur')}
-            style={{background: role === 'personnel' ? '#FFC107' : 'rgba(255,255,255,0.25)', color: role === 'personnel' ? 'black' : 'white'}}
-          >
-            {role === 'agriculteur' ? 'AGRICULTEUR' : 'STAFF'}
-          </div>
-        </div>
-      </header>
+      {/* HEADER MODIFIÉ */}
+<header className="app-header">
+  <div className="header-content">
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      {/* Bouton Retour : visible si on n'est pas sur l'accueil (home ou staff_home) */}
+      {currentTab !== 'home' && currentTab !== 'staff_home' && (
+        <button 
+          onClick={() => setCurrentTab(role === 'agriculteur' ? 'home' : 'staff_home')}
+          style={{ background: 'none', border: 'none', fontSize: '20px', color: 'white', cursor: 'pointer' }}
+        >
+          ⬅️
+        </button>
+      )}
+      <div className="app-title">
+        <span>🍃</span> CAFCOOP
+      </div>
+    </div>
+    
+    <div 
+      className="role-badge" 
+      onClick={() => {
+        const newRole = role === 'agriculteur' ? 'personnel' : 'agriculteur';
+        setRole(newRole);
+        setCurrentTab(newRole === 'agriculteur' ? 'home' : 'staff_home');
+      }}
+      style={{
+        background: role === 'personnel' ? '#FFC107' : 'rgba(255,255,255,0.25)', 
+        color: role === 'personnel' ? 'black' : 'white',
+        fontWeight: 'bold'
+      }}
+    >
+      {role === 'agriculteur' ? 'MODE AGRICULTEUR' : 'MODE STAFF'}
+    </div>
+  </div>
+</header>
+
 
       {/* MAIN CONTENT */}
       <main className="content-area" id="main-content">

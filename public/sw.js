@@ -8,7 +8,8 @@ const urlsToCache = [
   '/',
   '/offline.html',
   // AJOUT CRUCIAL ICI :
-  '/css/main.css', 
+  '/css/main.css',
+'../styles/main.css
   // Assure-toi que ce chemin correspond exactement à l'endroit où tu as mis le fichier
   '/js/cafcoop_app.js',
   '/js/cafcoop_data.js',

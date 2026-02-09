@@ -439,7 +439,7 @@ export default function Home() {
 
       </main>
 
-      {/* BOTTOM NAV - Uniquement pour Agriculteur */}
+  {/* BOTTOM NAV - Uniquement pour Agriculteur */}
       {role === 'agriculteur' && (
           <nav className="bottom-nav" style={{
               position: 'fixed', 
@@ -453,4 +453,61 @@ export default function Home() {
             <div className={`nav-item ${currentTab === 'home' ? 'active' : ''}`} onClick={() => setCurrentTab('home')}>
                 <span>🏠</span><span>Accueil</span>
             </div>
-            <div className={`nav-item ${currentTab === 'boutique' ? 'active' : ''}
+            <div className={`nav-item ${currentTab === 'boutique' ? 'active' : ''}`} onClick={() => setCurrentTab('boutique')}>
+                <span>🛒</span><span>Achats</span>
+            </div>
+            <div className={`nav-item ${currentTab === 'panier' ? 'active' : ''}`} onClick={() => setCurrentTab('panier')}>
+                <div style={{position:'relative'}}>
+                    <span>🧺</span>
+                    {panier.length > 0 && (
+                        <span style={{
+                            position:'absolute', top:-5, right:-10, 
+                            background:'red', color:'white', 
+                            borderRadius:'50%', fontSize:10, 
+                            width:16, height:16, display:'flex', 
+                            alignItems:'center', justifyContent:'center'
+                        }}>
+                            {panier.length}
+                        </span>
+                    )}
+                </div>
+                <span>Panier</span>
+            </div>
+            <div className={`nav-item ${currentTab === 'diagnostic' ? 'active' : ''}`} onClick={() => setCurrentTab('diagnostic')}>
+                <span>🩺</span><span>Diag</span>
+            </div>
+          </nav>
+      )}
+
+      {/* MODAL PRODUIT */}
+      {showProductModal && selectedProduct && (
+        <div className="modal active">
+            <div className="card" style={{width:'90%', maxHeight:'90vh', overflowY:'auto', position:'relative'}}>
+                <button onClick={() => setShowProductModal(false)} style={{position:'absolute', right:10, top:10, border:'none', background:'none', fontSize:20}}>✕</button>
+                <div style={{fontSize:60, textAlign:'center'}}>{selectedProduct.image}</div>
+                <h2 style={{textAlign:'center', color:'var(--primary)'}}>{selectedProduct.nom}</h2>
+                <p style={{textAlign:'center', fontSize:18, fontWeight:'bold'}}>{selectedProduct.prix.toLocaleString()} FCFA</p>
+                <p>{selectedProduct.description}</p>
+                
+                <div style={{display:'flex', justifyContent:'center', alignItems:'center', gap:15, margin:'20px 0'}}>
+                    <button className="action-btn" onClick={() => setProductQuantity(Math.max(1, productQuantity - 1))}>-</button>
+                    <span style={{fontSize:22, fontWeight:'bold'}}>{productQuantity}</span>
+                    <button className="action-btn" onClick={() => setProductQuantity(productQuantity + 1)}>+</button>
+                </div>
+
+                <button className="action-btn primary" style={{width:'100%'}} onClick={handleAddToCart}>
+                    Ajouter au Panier ({ (selectedProduct.prix * productQuantity).toLocaleString() } FCFA)
+                </button>
+            </div>
+        </div>
+      )}
+
+      {/* NOTIFICATION TOAST */}
+      {notification && (
+        <div className={`notification show`} style={{background: notification.type === 'error' ? '#D32F2F' : '#4CAF50'}}>
+            {notification.msg}
+        </div>
+      )}
+    </div>
+  );
+}

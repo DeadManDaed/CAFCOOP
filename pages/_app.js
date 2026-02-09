@@ -19,8 +19,8 @@ function MyApp({ Component, pageProps }) {
       <Component {...pageProps} />
 
       <style jsx global>{`
-        /* Optimisations pour le mode App Mobile */
-        html, body {
+   // Optimisations pour le mode App Mobile 
+/*        html, body {
           overscroll-behavior-y: contain; /* Empêche le "pull-to-refresh" natif du navigateur */
           -webkit-tap-highlight-color: transparent;
         }
@@ -32,7 +32,8 @@ function MyApp({ Component, pageProps }) {
 export default MyApp
 
 */
-*/
+
+
 // pages/_app.js
 import { useEffect } from 'react';
 import Head from 'next/head';

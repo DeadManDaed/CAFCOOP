@@ -262,31 +262,37 @@ export default function Home() {
 
       {/* MAIN CONTENT */}
       <main className="content-area" id="main-content">
-        {currentTab === 'home' && renderHome()}
-        {currentTab === 'boutique' && renderBoutique()}
-        {currentTab === 'diagnostic' && renderDiagnostic()}
-        {currentTab === 'commandes' && (
-            <div className="fade-in">
-                <h2>📦 Historique</h2>
-                {commandesList.length === 0 ? <p>Aucune commande.</p> : commandesList.map(c => (
-                    <div key={c.id_commande} className="card">
-                        <div><strong>Commande #{c.id_commande}</strong></div>
-                        <div style={{color:'var(--primary)'}}>{c.montant_total} FCFA</div>
-                        <small>{c.statut}</small>
-                    </div>
-                ))}
-            </div>
-        )}
-        {currentTab === 'profil' && (
-            <div className="fade-in">
-                <h2>👤 Mon Profil</h2>
-                <div className="card">
-                   <p>Jean NKOUAM (Démo)</p>
-                   <p>Mvolye, Yaoundé</p>
-                </div>
-            </div>
-        )}
-      </main>
+  {/* VUES AGRICULTEUR */}
+  {role === 'agriculteur' && (
+    <>
+      {currentTab === 'home' && renderHome()}
+      {currentTab === 'boutique' && renderBoutique()}
+      {currentTab === 'diagnostic' && renderDiagnostic()}
+      {currentTab === 'commandes' && renderHistoriqueCommandes()} 
+    </>
+  )}
+
+  {/* VUES STAFF */}
+  {role === 'personnel' && (
+    <>
+      {currentTab === 'staff_home' && renderStaffHome()}
+      {currentTab === 'staff_diagnostics' && renderStaffDiagnostics()}
+      {currentTab === 'staff_livraisons' && (
+        <div className="fade-in">
+          <h2>🚚 Commandes à livrer</h2>
+          {commandesList.filter(c => c.statut === 'en_attente').map(c => (
+             <div key={c.id_commande} className="card">
+                <strong>Commande #{c.id_commande}</strong>
+                <p>Montant: {c.montant_total} FCFA</p>
+                <button className="action-btn primary" style={{width:'100%'}}>Valider la livraison</button>
+             </div>
+          ))}
+        </div>
+      )}
+    </>
+  )}
+</main>
+
 
       {/* BOTTOM NAV */}
       <nav className="bottom-nav">
@@ -338,3 +344,51 @@ export default function Home() {
     </div>
   );
 }
+
+// --- RENDERERS STAFF ---
+
+const renderStaffHome = () => (
+  <div className="fade-in">
+    <h2 style={{color:'var(--primary-dark)'}}>📊 Tableau de Bord Staff</h2>
+    <div className="action-grid">
+      <div className="action-btn primary" onClick={() => setCurrentTab('staff_diagnostics')}>
+        <span style={{fontSize:40}}>📑</span>
+        <span>Demandes Diag.</span>
+        {diagnosticsList.filter(d => d.statut === 'en_attente').length > 0 && 
+          <span className="badge-count">{diagnosticsList.filter(d => d.statut === 'en_attente').length}</span>}
+      </div>
+      <div className="action-btn primary" onClick={() => setCurrentTab('staff_livraisons')}>
+        <span style={{fontSize:40}}>🚚</span><span>Livraisons</span>
+      </div>
+      <div className="action-btn" onClick={() => setCurrentTab('staff_ventes')}>
+        <span style={{fontSize:40}}>📈</span><span>Historique Ventes</span>
+      </div>
+    </div>
+  </div>
+);
+
+const renderStaffDiagnostics = () => (
+  <div className="fade-in">
+    <h2>📑 Gestion des Diagnostics</h2>
+    {diagnosticsList.map(diag => (
+      <div key={diag.id} className="card" style={{borderLeft: diag.statut === 'en_attente' ? '5px solid orange' : '5px solid green'}}>
+        <div style={{display:'flex', justifyContent:'space-between'}}>
+          <strong>Culture: {diag.id_culture}</strong>
+          <small>{formatDate(diag.date_creation)}</small>
+        </div>
+        <p style={{fontSize:13, margin:'10px 0'}}>{diag.commentaire_agriculteur}</p>
+        
+        {diag.statut === 'en_attente' && (
+          <div style={{display:'flex', gap:10, marginTop:10}}>
+            <button className="action-btn primary" style={{flex:1, fontSize:12}} onClick={() => alert("Transfert à l'expert...")}>
+              👨‍🔬 Transférer Expert
+            </button>
+            <button className="action-btn" style={{flex:1, fontSize:12}} onClick={() => alert("Répondre directement")}>
+              ✍️ Répondre
+            </button>
+          </div>
+        )}
+      </div>
+    ))}
+  </div>
+);

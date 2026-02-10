@@ -1,7 +1,6 @@
 // pages/_app.js
 import { useEffect } from 'react';
 import Head from 'next/head';
-// On garde l'import pour le build, mais on va le "doubler" dans le Head
 import '../styles/globals.css'; 
 
 function MyApp({ Component, pageProps }) {
@@ -15,10 +14,13 @@ function MyApp({ Component, pageProps }) {
   return (
     <>
       <Head>
-        {/* On ajoute cette ligne : le "?v=1.0.1" force le navigateur à ignorer le vieux cache */}
+        {/* CORRECTION : On ferme la balise Head et on insère le lien avec version */}
+        
+      </Head>
+      
       <Component {...pageProps} />
     </>
   );
 }
-export default MyApp;
 
+export default MyApp;

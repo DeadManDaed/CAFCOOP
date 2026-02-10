@@ -16,8 +16,6 @@ function MyApp({ Component, pageProps }) {
     <>
       <Head>
         {/* On ajoute cette ligne : le "?v=1.0.1" force le navigateur à ignorer le vieux cache */}
-        <link rel="stylesheet" href="/_next/static/css/styles.css?v=1.0.1" />
-      </Head>
       <Component {...pageProps} />
     </>
   );

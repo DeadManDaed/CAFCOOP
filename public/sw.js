@@ -48,3 +48,22 @@ self.addEventListener('fetch', (event) => {
       })
   );
 });*/
+// public/sw.js - Script de désactivation forcée
+self.addEventListener('install', () => {
+  self.skipWaiting(); // Force l'activation immédiate
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((names) => {
+      // Supprime TOUS les caches (styles, images, pages)
+      return Promise.all(names.map(name => caches.delete(name)));
+    }).then(() => {
+      // Se désenregistre de tous les clients (onglets)
+      return self.registration.unregister();
+    }).then(() => {
+      return self.clients.claim();
+    })
+  );
+});
+

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cafcoop-v3'; // On incrémente la version
+/*const CACHE_NAME = 'cafcoop-v3'; // On incrémente la version
 
 const urlsToCache = [
   '/',
@@ -47,4 +47,4 @@ self.addEventListener('fetch', (event) => {
         });
       })
   );
-});
+});*/

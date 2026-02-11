@@ -12,6 +12,7 @@ import * as UI from '../lib/ui';
 import { sendDiagnostic, fetchDiagnosticsByUser } from '../lib/diagnostic';
 import { initRealtime, unsubscribeRealtime } from '../lib/realtime';
 import { getSupabase, getCurrentUser, formatDate } from '../lib/supabase-client';
+import { requestDiagnosticPdf } from '../lib/diagnostic';
 
 export default function Home() {
   // --- State (utilisé par postAuthInit)
@@ -19,6 +20,7 @@ export default function Home() {
   const [currentTab, setCurrentTab] = useState('home');
   const [panier, setPanier] = useState([]);
   const [diagnosticsList, setDiagnosticsList] = useState([]);
+const [pdfLoadingById, setPdfLoadingById] = useState({});
   const [commandesList, setCommandesList] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -107,7 +109,50 @@ export default function Home() {
       UI.afficherNotification('Erreur commande', 'error');
       return;
     }
+const handleRequestPdf = async (id) => {
+  if (!id) return;
+  // si déjà en cours, ignore
+  if (pdfLoadingById[id]) return;
 
+  // lock
+  setPdfLoadingById(prev => ({ ...prev, [id]: true }));
+  UI.afficherNotification('Génération du PDF en cours...', 'info');
+
+  try {
+    const result = await requestDiagnosticPdf(id);
+    // ta fonction renvoie ok/fail wrappers ; gère les deux cas
+    // si tu utilises un pattern { ok: true, url } ou { ok: false, error }
+    if (result && result.ok && result.value) {
+      window.open(result.value, '_blank');
+      UI.afficherNotification('PDF prêt', 'success');
+    } else if (result && result.ok && result.url) {
+      window.open(result.url, '_blank');
+      UI.afficherNotification('PDF prêt', 'success');
+    } else if (result && result.error) {
+      console.error('PDF error', result.error);
+      UI.afficherNotification('Erreur génération PDF', 'error');
+    } else {
+      // fallback : si requestDiagnosticPdf renvoie string url directement
+      if (typeof result === 'string') {
+        window.open(result, '_blank');
+        UI.afficherNotification('PDF prêt', 'success');
+      } else {
+        UI.afficherNotification('Erreur génération PDF', 'error');
+        console.warn('requestDiagnosticPdf returned unexpected:', result);
+      }
+    }
+  } catch (e) {
+    console.error('handleRequestPdf error', e);
+    UI.afficherNotification('Erreur réseau lors de la génération PDF', 'error');
+  } finally {
+    // unlock
+    setPdfLoadingById(prev => {
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
+  }
+};
     Panier.clearCart();
     setPanier([]);
     UI.closeModal();

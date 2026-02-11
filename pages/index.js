@@ -487,6 +487,17 @@ const handleRequestPdf = async (id) => {
         </div>
       )}
     </div>
+// Exemple à coller dans renderDiagnostic ou dans la carte détail d'un diagnostic
+// `d` est l'objet diagnostic courant, `role` est l'état role du composant
+
+{ /* Bouton pour générer le PDF d'un diagnostic */ }
+<button
+  className="btn btn-outline"
+  onClick={() => requestDiagnosticPdf(d.id_diagnostic || d.id)}
+  style={{ marginLeft: 8 }}
+>
+  📄 Générer PDF
+</button>
   );
 
   const renderCommandes = () => (

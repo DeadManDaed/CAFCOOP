@@ -1,5 +1,8 @@
+`jsx
 // /pages/index.js
-// Page Next.js qui orchestre les modules et remplace public/cafcoop_app.js
+// Page Next.js principale — orchestration des modules lib/*
+// Remplace public/cafcoop_app.js : gère l'auth, init realtime, panier, boutique, diagnostics, commandes, UI (modals/notifications).
+
 import React, { useEffect, useState, useRef } from 'react';
 import Head from 'next/head';
 import { listProducts, getProductById, formatProductForUI } from '../lib/boutique';
@@ -7,9 +10,11 @@ import * as Panier from '../lib/panier';
 import * as Commandes from '../lib/commandes';
 import * as UI from '../lib/ui';
 import { sendDiagnostic, fetchDiagnosticsByUser } from '../lib/diagnostic';
-import { initRealtime } from '../lib/realtime';
+import { initRealtime, unsubscribeRealtime } from '../lib/realtime';
 import { getSupabase, getCurrentUser, formatDate } from '../lib/supabase-client';
+
 export default function Home() {
+  // --- State (utilisé par postAuthInit)
   const [role, setRole] = useState('agriculteur');
   const [currentTab, setCurrentTab] = useState('home');
   const [panier, setPanier] = useState([]);
@@ -21,75 +26,13 @@ export default function Home() {
   const photoFileRef = useRef(null);
   const [currentUser, setCurrentUser] = useState(null);
 
+  // --- Initialisation légère (chargement UI non-auth)
   useEffect(() => {
-    // initialisation client-side
     setPanier(Panier.loadCart());
     setProducts(listProducts());
-
-    (async () => {
-      await getSupabase(); // lazy init
-      const user = await getCurrentUser();
-      setCurrentUser(user || { id_utilisateur: 1 });
-
-      const { data: diags } = await fetchDiagnosticsByUser(user?.id_utilisateur || 1);
-      if (diags) setDiagnosticsList(diags);
-
-      const supaRealtime = await initRealtime(
-        (payload) => {
-          const d = payload.new;
-          setDiagnosticsList(prev => [{ id: d.id_diagnostic, producteur: d.commentaire_agriculteur || 'Utilisateur', culture: d.id_culture, symptomes: [], statut: 'En attente', date: new Date(d.date_creation).toLocaleString() }, ...prev]);
-          if (role === 'personnel') UI.afficherNotification('🔔 Nouveau diagnostic !', 'info');
-        },
-        (payload) => {
-          const c = payload.new;
-          setCommandesList(prev => [{ ...c }, ...prev]);
-        }
-      );
-    })();
   }, []);
 
-  useEffect(() => {
-    // charger commandes initiales
-    (async () => {
-      try {
-        const supabase = await getSupabase();
-        const { data } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
-        if (data) setCommandesList(data);
-      } catch (e) { console.warn(e); }
-    })();
-  }, []);
-
-  // UI helpers
-  const updateCartSummary = () => {
-    setPanier(Panier.loadCart());
-  };
-
-  const handleVoirDetailProduit = (id) => {
-    const p = getProductById(id);
-    if (!p) return;
-    setSelectedProduct(formatProductForUI(p));
-    UI.openModal(renderProductModal(p));
-  };
-
-  const renderProductModal = (p) => {
-    return `
-      <div class="modal-header">
-        <div class="modal-title">${p.image} ${p.nom}</div>
-        <div class="close-modal" onclick="document.getElementById('modal').classList.remove('active')">✕</div>
-      </div>
-      <div style="font-size:24px; font-weight:700; color:var(--accent); margin:15px 0;">
-        ${p.prix.toLocaleString()} FCFA
-      </div>
-      <p>${p.description || ''}</p>
-      <div class="form-group" style="margin-top:20px;">
-        <label>Quantité</label>
-        <input type="number" id="product-quantity" value="1" min="1" style="width:100%; padding:12px; border:1px solid #ddd; border-radius:8px;">
-      </div>
-      <button class="btn btn-primary" id="modal-add-to-cart">🛒 Ajouter au panier</button>
-    `;
-  };
-
-  // expose a small bridge for modal button (since modal HTML is raw)
+  // --- Bridge pour modal produit (HTML brut)
   useEffect(() => {
     const handler = (e) => {
       if (e.target && e.target.id === 'modal-add-to-cart' && selectedProduct) {
@@ -97,7 +40,7 @@ export default function Home() {
         const qty = qtyEl ? parseInt(qtyEl.value || '1', 10) : 1;
         const newCart = Panier.addToCart(Panier.loadCart(), selectedProduct, qty);
         setPanier([...newCart]);
-        UI.afficherNotification(`${selectedProduct.nom} ajouté`, 'success');
+        UI.afficherNotification(${selectedProduct.nom} ajouté, 'success');
         UI.closeModal();
       }
     };
@@ -105,7 +48,7 @@ export default function Home() {
     return () => document.removeEventListener('click', handler);
   }, [selectedProduct]);
 
-  // Diagnostic handlers
+  // --- Photo handlers
   const handleChargerPhoto = (file) => {
     if (!file) return;
     photoFileRef.current = file;
@@ -114,6 +57,7 @@ export default function Home() {
     reader.readAsDataURL(file);
   };
 
+  // --- Envoi diagnostic
   const handleEnvoyerDiagnostic = async () => {
     const cultureEl = document.getElementById('diag-culture');
     const culture = cultureEl ? cultureEl.value : '';
@@ -124,9 +68,9 @@ export default function Home() {
     }
 
     const payload = {
-      id_agriculteur: currentUser?.id_utilisateur || 1,
+      idagriculteur: currentUser?.idutilisateur || 1,
       id_culture: culture,
-      commentaire_agriculteur: `${culture} - ${symptomes.join(', ')}`,
+      commentaire_agriculteur: ${culture} - ${symptomes.join(', ')},
       photos: photoFileRef.current ? [photoFileRef.current] : []
     };
 
@@ -147,7 +91,7 @@ export default function Home() {
     setCurrentTab('home');
   };
 
-  // Commande
+  // --- Validation commande
   const handleValiderCommande = async () => {
     const modeEl = document.getElementById('payment-mode');
     const mode = modeEl ? modeEl.value : 'especes';
@@ -156,7 +100,7 @@ export default function Home() {
 
     UI.afficherNotification('Validation commande...', 'info');
     const lignes = cart.map(p => ({ id: p.id, quantite: p.quantite, prix: p.prix }));
-    const payload = { id_agriculteur: currentUser?.id_utilisateur || 1, montant_total: total, mode_paiement: mode, lignes };
+    const payload = { idagriculteur: currentUser?.idutilisateur || 1, montanttotal: total, modepaiement: mode, lignes };
     const { data, error } = await Commandes.createOrder(payload);
     if (error) {
       console.error(error);
@@ -170,13 +114,262 @@ export default function Home() {
     UI.afficherNotification('✅ Commande validée !', 'success');
 
     // refresh commandes
-    const supabase = await getSupabase();
-    const { data: cmds } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
-    if (cmds) setCommandesList(cmds);
+    try {
+      const supabase = await getSupabase();
+      const { data: cmds } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
+      if (cmds) setCommandesList(cmds);
+    } catch (e) { console.warn(e); }
+
     setCurrentTab('commandes');
   };
 
-  // Renderers (simplifiés, reprennent ton HTML existant)
+  // --- Auth + init (robuste) : MutationObserver + onAuthStateChange v2 + cleanup
+  useEffect(() => {
+    let removeModalListeners = null;
+    let authListener = null;
+    let modalObserver = null;
+    let attachInterval = null;
+
+    const attachModalHandlers = (client) => {
+      const tryAttach = () => {
+        const loginBtn = document.getElementById('login-btn');
+        const magicBtn = document.getElementById('magic-btn');
+        const feedback = document.getElementById('login-feedback');
+
+        if (!loginBtn || !magicBtn || !feedback) return false;
+
+        const onLogin = async () => {
+          try {
+            loginBtn.disabled = true;
+            feedback.innerText = 'Connexion...';
+            const email = document.getElementById('login-email').value;
+            const pass = document.getElementById('login-pass').value;
+            const { data, error } = await client.auth.signInWithPassword({ email, password: pass });
+            if (error) {
+              feedback.innerText = error.message || 'Erreur connexion';
+              UI.afficherNotification('Erreur connexion', 'error');
+              loginBtn.disabled = false;
+              return;
+            }
+            UI.closeModal();
+            await postAuthInit(data.session.user.id);
+          } catch (e) {
+            console.error('onLogin error', e);
+            feedback.innerText = 'Erreur réseau';
+            loginBtn.disabled = false;
+          }
+        };
+
+        const onMagic = async () => {
+          try {
+            magicBtn.disabled = true;
+            feedback.innerText = 'Envoi du lien magique...';
+            const email = document.getElementById('login-email').value;
+            const { data, error } = await client.auth.signInWithOtp({ email });
+            if (error) {
+              feedback.innerText = error.message || 'Erreur envoi lien';
+              UI.afficherNotification('Erreur', 'error');
+              magicBtn.disabled = false;
+              return;
+            }
+            feedback.innerText = 'Lien envoyé. Vérifie ta boîte mail.';
+            UI.afficherNotification('Lien magique envoyé', 'success');
+          } catch (e) {
+            console.error('onMagic error', e);
+            feedback.innerText = 'Erreur réseau';
+            magicBtn.disabled = false;
+          }
+        };
+
+        loginBtn.addEventListener('click', onLogin);
+        magicBtn.addEventListener('click', onMagic);
+
+        removeModalListeners = () => {
+          try { loginBtn.removeEventListener('click', onLogin); } catch (e) {}
+          try { magicBtn.removeEventListener('click', onMagic); } catch (e) {}
+        };
+
+        return true;
+      };
+
+      const modalContent = document.getElementById('modal-content');
+      if (modalContent) {
+        modalObserver = new MutationObserver(() => {
+          if (tryAttach()) {
+            modalObserver.disconnect();
+            modalObserver = null;
+          }
+        });
+        modalObserver.observe(modalContent, { childList: true, subtree: true });
+      }
+
+      let attempts = 0;
+      attachInterval = setInterval(() => {
+        attempts += 1;
+        if (tryAttach() || attempts > 8) {
+          clearInterval(attachInterval);
+          attachInterval = null;
+        }
+      }, 80);
+    };
+
+    const checkAuthAndInit = async () => {
+      const client = await getSupabase();
+      const { data: { session } } = await client.auth.getSession();
+
+      if (!session) {
+        const html = `
+          <div style="padding:16px;">
+            <h3>Connexion</h3>
+            <input id="login-email" placeholder="Email" style="width:100%; padding:8px; margin:8px 0;" />
+            <input id="login-pass" type="password" placeholder="Mot de passe" style="width:100%; padding:8px; margin:8px 0;" />
+            <div style="display:flex; gap:8px;">
+              <button id="login-btn" class="btn btn-primary">Se connecter</button>
+              <button id="magic-btn" class="btn">Magic link</button>
+            </div>
+            <div id="login-feedback" style="margin-top:8px; font-size:13px;"></div>
+          </div>
+        `;
+        UI.openModal(html);
+
+        attachModalHandlers(client);
+
+        // Supabase v2 onAuthStateChange pattern
+        const { data } = client.auth.onAuthStateChange(async (event, sessionData) => {
+          if (sessionData?.session) {
+            UI.closeModal();
+            await postAuthInit(sessionData.session.user.id);
+          }
+        });
+        authListener = data;
+      } else {
+        await postAuthInit(session.user.id);
+      }
+    };
+
+    checkAuthAndInit();
+
+    return () => {
+      if (removeModalListeners) {
+        try { removeModalListeners(); } catch (e) {}
+        removeModalListeners = null;
+      }
+      if (modalObserver) {
+        try { modalObserver.disconnect(); } catch (e) {}
+        modalObserver = null;
+      }
+      if (attachInterval) {
+        try { clearInterval(attachInterval); } catch (e) {}
+        attachInterval = null;
+      }
+      if (authListener?.subscription?.unsubscribe) {
+        try { authListener.subscription.unsubscribe(); } catch (e) {}
+      }
+      try { unsubscribeRealtime(); } catch (e) {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- postAuthInit : défini dans le scope du composant pour accéder aux setters
+  async function postAuthInit(uid) {
+    if (!uid) return;
+    try {
+      const supabase = await getSupabase();
+
+      // récupérer le profil métier lié à id_auth
+      const { data: userRow, error: userErr } = await supabase
+        .from('utilisateurs')
+        .select('*')
+        .eq('id_auth', uid)
+        .maybeSingle();
+
+      if (userErr) {
+        console.error('Erreur récupération profil', userErr);
+        UI.afficherNotification('Erreur récupération profil', 'error');
+        return;
+      }
+
+      if (!userRow) {
+        UI.afficherNotification('Profil CAFCOOP non trouvé. Complétez votre profil.', 'info');
+        setCurrentTab && setCurrentTab('profil');
+        // placeholder minimal pour permettre au formulaire de création de profil de s'afficher
+        setCurrentUser && setCurrentUser({ id_auth: uid, nom: '', prenom: '', email: '' });
+        return;
+      }
+
+      // hydrate state
+      setCurrentUser && setCurrentUser(userRow);
+
+      // determine role (staff override)
+      const { data: staffRows } = await supabase
+        .from('personnel_cafcoop')
+        .select('id_personnel')
+        .eq('idutilisateur', userRow.idutilisateur)
+        .limit(1);
+
+      const resolvedRole = (staffRows && staffRows.length) ? 'personnel' : (userRow.role || 'agriculteur');
+      setRole && setRole(resolvedRole);
+
+      // load panier & products
+      try {
+        const localCart = Panier.loadCart();
+        setPanier && setPanier(localCart);
+      } catch (e) { console.warn('panier load error', e); }
+
+      try {
+        const prods = listProducts();
+        setProducts && setProducts(prods);
+      } catch (e) { console.warn('products load error', e); }
+
+      // load diagnostics for user
+      try {
+        const { data: diags, error: diagErr } = await fetchDiagnosticsByUser(userRow.id_utilisateur);
+        if (diagErr) console.warn('fetchDiagnosticsByUser error', diagErr);
+        if (diags) setDiagnosticsList && setDiagnosticsList(diags);
+      } catch (e) { console.warn('diagnostics load error', e); }
+
+      // load commandes for user (or all if staff)
+      try {
+        if (resolvedRole === 'personnel') {
+          const { data: cmds, error: cmdsErr } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
+          if (cmdsErr) console.warn('fetch commandes error', cmdsErr);
+          if (cmds) setCommandesList && setCommandesList(cmds);
+        } else {
+          const { data: cmds, error: cmdsErr } = await supabase
+            .from('commandes')
+            .select('*')
+            .eq('idagriculteur', userRow.idutilisateur)
+            .order('date_commande', { ascending: false });
+          if (cmdsErr) console.warn('fetch commandes error', cmdsErr);
+          if (cmds) setCommandesList && setCommandesList(cmds);
+        }
+      } catch (e) { console.warn('commandes load error', e); }
+
+      // init realtime subscriptions (once user and role known)
+      try {
+        await initRealtime(
+          (payload) => {
+            const d = payload.new;
+            setDiagnosticsList(prev => [{ id: d.iddiagnostic, producteur: d.commentaireagriculteur || 'Utilisateur', culture: d.idculture, symptomes: [], statut: 'En attente', date: formatDate(d.datecreation) }, ...prev]);
+            if (resolvedRole === 'personnel') UI.afficherNotification('🔔 Nouveau diagnostic !', 'info');
+          },
+          (payload) => {
+            const c = payload.new;
+            setCommandesList(prev => [{ ...c }, ...prev]);
+          }
+        );
+      } catch (e) {
+        console.warn('initRealtime error', e);
+      }
+
+      UI.afficherNotification(Bienvenue ${userRow.nom || ''}, 'success');
+    } catch (e) {
+      console.error('postAuthInit error', e);
+      UI.afficherNotification('Erreur initialisation', 'error');
+    }
+  }
+
+  // --- Renderers (simplifiés)
   const renderHome = () => (
     <div className="fade-in">
       <h2 style={{ textAlign: 'center', marginBottom: 20 }}>🍃 CAFCOOP</h2>
@@ -211,18 +404,18 @@ export default function Home() {
         <>
           <select id="diag-culture" onChange={() => {
             const culture = document.getElementById('diag-culture').value;
-            const maladies = window.BASE_PATHOLOGIES ? window.BASE_PATHOLOGIES[culture] || [] : [];
+            const maladies = window.BASEPATHOLOGIES ? window.BASEPATHOLOGIES[culture] || [] : [];
             const zone = document.getElementById('zone-symptomes');
             if (!zone) return;
             zone.innerHTML = maladies.map(m => `
               <div class="card">
                 <strong>${m.nom}</strong>
-                ${m.symptomes.map(s => `<label style="display:block; margin:5px 0;"><input type="checkbox" class="chk-symp" value="${s}"> ${s}</label>`).join('')}
+                ${m.symptomes.map(s => <label style="display:block; margin:5px 0;"><input type="checkbox" class="chk-symp" value="${s}"> ${s}</label>).join('')}
               </div>
             `).join('');
           }} style={{ width: '100%', padding: 12, borderRadius: 8, border: '1px solid #ddd', marginBottom: 15 }}>
             <option value="">-- Culture --</option>
-            {Object.keys(typeof window !== 'undefined' && window.BASE_PATHOLOGIES ? window.BASE_PATHOLOGIES : {}).map(c => <option key={c} value={c}>{c}</option>)}
+            {Object.keys(typeof window !== 'undefined' && window.BASEPATHOLOGIES ? window.BASEPATHOLOGIES : {}).map(c => <option key={c} value={c}>{c}</option>)}
           </select>
 
           <div id="zone-symptomes"></div>
@@ -240,10 +433,10 @@ export default function Home() {
         <div>
           <h3>📋 Diagnostics ({diagnosticsList.length})</h3>
           {diagnosticsList.map(d => (
-            <div key={d.id} className="card" style={{ borderLeft: `4px solid ${d.statut === 'En attente' ? 'orange' : 'green'}` }}>
+            <div key={d.id} className="card" style={{ borderLeft: 4px solid ${d.statut === 'En attente' ? 'orange' : 'green'} }}>
               <strong>{d.producteur}</strong><br />
               <small>{d.date}</small><br />
-              <div className={`status-pill ${d.statut === 'En attente' ? 'status-pending' : 'status-ok'}`}>{d.statut}</div>
+              <div className={status-pill ${d.statut === 'En attente' ? 'status-pending' : 'status-ok'}}>{d.statut}</div>
             </div>
           ))}
         </div>
@@ -258,7 +451,7 @@ export default function Home() {
         <div key={c.id_commande || c.id} className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <div><strong>#{c.id_commande || c.id}</strong></div>
-            <div style={{ fontWeight: 700 }}>{(c.montant_total || c.montant_total === 0) ? (c.montant_total).toLocaleString() + ' FCFA' : ''}</div>
+            <div style={{ fontWeight: 700 }}>{(c.montanttotal || c.montanttotal === 0) ? (c.montant_total).toLocaleString() + ' FCFA' : ''}</div>
           </div>
         </div>
       ))}
@@ -268,12 +461,45 @@ export default function Home() {
   const renderProfil = () => (
     <div className="fade-in">
       <h2>👤 Profil</h2>
-      <div className="card">
-        <p><strong>Nom:</strong> {currentUser?.nom || 'Utilisateur DEMO'}</p>
-        <p><strong>Rôle:</strong> {role}</p>
-      </div>
+      {currentUser ? (
+        <div className="card">
+          <p><strong>Nom:</strong> {currentUser.nom || 'Utilisateur DEMO'}</p>
+          <p><strong>Rôle:</strong> {role}</p>
+        </div>
+      ) : (
+        <div className="card">
+          <p>Création de profil nécessaire. Complétez les informations ci‑dessous.</p>
+          {/ Formulaire de création de profil à implémenter (POST /api/link-profile) /}
+        </div>
+      )}
     </div>
   );
+
+  // --- Product modal renderer (raw HTML)
+  const renderProductModal = (p) => {
+    return `
+      <div class="modal-header">
+        <div class="modal-title">${p.image || ''} ${p.nom}</div>
+        <div class="close-modal" onclick="document.getElementById('modal').classList.remove('active')">✕</div>
+      </div>
+      <div style="font-size:20px; font-weight:700; color:var(--accent); margin:12px 0;">
+        ${p.prix.toLocaleString()} FCFA
+      </div>
+      <p>${p.description || ''}</p>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Quantité</label>
+        <input type="number" id="product-quantity" value="1" min="1" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+      </div>
+      <button class="btn btn-primary" id="modal-add-to-cart">🛒 Ajouter au panier</button>
+    `;
+  };
+
+  const handleVoirDetailProduit = (id) => {
+    const p = getProductById(id);
+    if (!p) return;
+    setSelectedProduct(formatProductForUI(p));
+    UI.openModal(renderProductModal(p));
+  };
 
   return (
     <>
@@ -302,9 +528,9 @@ export default function Home() {
         </main>
 
         <nav className="bottom-nav">
-          <div className={`nav-item ${currentTab === 'home' ? 'active' : ''}`} onClick={() => setCurrentTab('home')}>🏠<span>Accueil</span></div>
-          <div className={`nav-item ${currentTab === 'boutique' ? 'active' : ''}`} onClick={() => setCurrentTab('boutique')}>🛒<span>Achats</span></div>
-          <div className={`nav-item ${currentTab === 'panier' ? 'active' : ''}`} onClick={() => setCurrentTab('panier')}>🧺<span>Panier</span></div>
+          <div className={nav-item ${currentTab === 'home' ? 'active' : ''}} onClick={() => setCurrentTab('home')}>🏠<span>Accueil</span></div>
+          <div className={nav-item ${currentTab === 'boutique' ? 'active' : ''}} onClick={() => setCurrentTab('boutique')}>🛒<span>Achats</span></div>
+          <div className={nav-item ${currentTab === 'panier' ? 'active' : ''}} onClick={() => setCurrentTab('panier')}>🧺<span>Panier</span></div>
         </nav>
       </div>
 
@@ -312,3 +538,4 @@ export default function Home() {
     </>
   );
 }
+`

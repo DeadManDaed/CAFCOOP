@@ -1,6 +1,6 @@
 `jsx
 // /pages/index.js
-// Page Next.js principale — orchestration des modules lib/*
+// Page Next.js principale — orchestration des modules lib/x
 // Remplace public/cafcoop_app.js : gère l'auth, init realtime, panier, boutique, diagnostics, commandes, UI (modals/notifications).
 
 import React, { useEffect, useState, useRef } from 'react';

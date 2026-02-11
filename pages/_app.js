@@ -1,6 +1,6 @@
 // pages/_app.js
 import Head from 'next/head';
-import '../styles/globals.css'; // Next.js gère le hash et le cache tout seul ici
+//import '../styles/globals.css'; // Next.js gère le hash et le cache tout seul ici
 
 function MyApp({ Component, pageProps }) {
   // Le bloc useEffect de registration du SW a été supprimé.

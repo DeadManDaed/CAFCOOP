@@ -3,6 +3,9 @@ import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { getSupabase, formatDate } from '../lib/supabase-client';
 import { BASE_PATHOLOGIES, PRODUITS_AGRICOLES } from '../public/js/cafcoop_data';
+//fonctions dans lib/diagnostic.js
+import { sendDiagnostic, fetchDiagnosticsByUser, findQuickSolutions } from '../lib/diagnostic';
+//import { getCurrentUserId } from '../lib/auth-helper'; // si tu as une utilité pour récupérer l'ID courant
 
 // VERSION DE L'APP - Incrémentez après chaque modification CSS
 const APP_VERSION = '1.0.2'
@@ -58,7 +61,8 @@ export default function Home() {
     if (savedCart) setPanier(JSON.parse(savedCart));
     chargerDonneesSupabase();
   }, [role]);
-
+const { data, error } = await fetchDiagnosticsByUser(currentUserId);
+    if (!error && data) setDiagnosticsList(data);
   const chargerDonneesSupabase = async () => {
     const supabase = await getSupabase();
     const { data: diagData } = await supabase.from('diagnostics').select('*').order('date_creation', { ascending: false });
@@ -137,7 +141,7 @@ export default function Home() {
     }
   };
 
-  const submitDiagnostic = async () => {
+/*  const submitDiagnostic = async () => {
     if (!diagCulture || selectedSymptomes.length === 0) return;
     const supabase = await getSupabase();
     const { error } = await supabase.from('diagnostics').insert({
@@ -161,6 +165,52 @@ export default function Home() {
       setCurrentTab('home');
     }
   };
+*/
+
+const submitDiagnostic = async () => {
+  // validation minimale
+  if (!diagCulture || selectedSymptomes.length === 0) {
+    showNotif('Veuillez sélectionner la culture et au moins un symptôme.', 'error');
+    return;
+  }
+
+  // Récupère l'ID utilisateur courant (adapter selon ton auth)
+  const currentUserId = getCurrentUserId ? getCurrentUserId() : 1; // fallback 1 si dev
+
+  const payload = {
+    id_agriculteur: currentUserId,
+    id_culture: diagCulture,
+    commentaire_agriculteur: `Symptômes: ${selectedSymptomes.map(s => s.split(':')[1]).join(', ')}`,
+    localisation_gps: gpsLocation,
+    photos: diagPhoto ? [diagPhoto] : [],
+    priorite: 'normale'
+  };
+
+  // UI: indiquer envoi
+  showNotif('Envoi du diagnostic...', 'success');
+
+  const { data, error } = await sendDiagnostic(payload);
+
+  if (error) {
+    console.error('sendDiagnostic error', error);
+    showNotif('Erreur lors de l\'envoi du diagnostic.', 'error');
+    return;
+  }
+
+  // reset formulaire (tu fais déjà ça ailleurs)
+  setDiagCulture('');
+  setSelectedSymptomes([]);
+  setDiagPhoto(null);
+  setPhotoPreview(null);
+  setGpsLocation(null);
+
+  // rafraîchir l'historique localement
+  const { data: hist, error: histErr } = await fetchDiagnosticsByUser(currentUserId);
+  if (!histErr && hist) setDiagnosticsList(hist);
+
+  showNotif('Diagnostic envoyé !');
+  setCurrentTab('home');
+};
 
   // --- RENDERERS ---
   const renderPanier = () => {

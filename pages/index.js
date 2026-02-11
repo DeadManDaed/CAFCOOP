@@ -34,117 +34,131 @@ const [pdfLoadingById, setPdfLoadingById] = useState({});
   }, []);
 
   // --- Bridge pour modal produit (HTML brut)
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.target && e.target.id === 'modal-add-to-cart' && selectedProduct) {
-        const qtyEl = document.getElementById('product-quantity');
-        const qty = qtyEl ? parseInt(qtyEl.value || '1', 10) : 1;
-        const newCart = Panier.addToCart(Panier.loadCart(), selectedProduct, qty);
-        setPanier([...newCart]);
-        UI.afficherNotification(${selectedProduct.nom} ajouté, 'success');
-        UI.closeModal();
-      }
-    };
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, [selectedProduct]);
+ useEffect(() => {
+  const handler = (e) => {
+    if (e.target && e.target.id === 'modal-add-to-cart' && selectedProduct) {
+      const qtyEl = document.getElementById('product-quantity');
+      const qty = qtyEl ? parseInt(qtyEl.value || '1', 10) : 1;
+      const newCart = Panier.addToCart(Panier.loadCart(), selectedProduct, qty);
+      setPanier([...newCart]);
+      UI.afficherNotification(`${selectedProduct.nom} ajouté`, 'success');
+      UI.closeModal();
+    }
+  };
+  document.addEventListener('click', handler);
+  return () => document.removeEventListener('click', handler);
+}, [selectedProduct]);
 
-  // --- Photo handlers
-  const handleChargerPhoto = (file) => {
-    if (!file) return;
-    photoFileRef.current = file;
-    const reader = new FileReader();
-    reader.onload = (e) => setPhotoPreview(e.target.result);
-    reader.readAsDataURL(file);
+// --- Photo handlers
+const handleChargerPhoto = (file) => {
+  if (!file) return;
+  photoFileRef.current = file;
+  const reader = new FileReader();
+  reader.onload = (e) => setPhotoPreview(e.target.result);
+  reader.readAsDataURL(file);
+};
+
+// --- Envoi diagnostic
+const handleEnvoyerDiagnostic = async () => {
+  const cultureEl = document.getElementById('diag-culture');
+  const culture = cultureEl ? cultureEl.value : '';
+  const symptomes = Array.from(document.querySelectorAll('.chk-symp:checked')).map(c => c.value);
+  if (!culture || symptomes.length === 0) {
+    UI.afficherNotification('Veuillez sélectionner une culture et au moins un symptôme.', 'error');
+    return;
+  }
+
+  const payload = {
+    id_agriculteur: currentUser?.id_utilisateur || 1,
+    id_culture: culture,
+    commentaire_agriculteur: `${culture} - ${symptomes.join(', ')}`,
+    photos: photoFileRef.current ? [photoFileRef.current] : []
   };
 
-  // --- Envoi diagnostic
-  const handleEnvoyerDiagnostic = async () => {
-    const cultureEl = document.getElementById('diag-culture');
-    const culture = cultureEl ? cultureEl.value : '';
-    const symptomes = Array.from(document.querySelectorAll('.chk-symp:checked')).map(c => c.value);
-    if (!culture || symptomes.length === 0) {
-      UI.afficherNotification('Veuillez sélectionner une culture et au moins un symptôme.', 'error');
-      return;
-    }
+  UI.afficherNotification('Envoi du diagnostic...', 'info');
+  const { data, error } = await sendDiagnostic(payload);
+  if (error) {
+    console.error(error);
+    UI.afficherNotification('Erreur lors de l\'envoi', 'error');
+    return;
+  }
 
-    const payload = {
-      idagriculteur: currentUser?.idutilisateur || 1,
-      id_culture: culture,
-      commentaire_agriculteur: ${culture} - ${symptomes.join(', ')},
-      photos: photoFileRef.current ? [photoFileRef.current] : []
-    };
+  UI.afficherNotification('✅ Diagnostic envoyé !', 'success');
+  setPhotoPreview(null);
+  photoFileRef.current = null;
 
-    UI.afficherNotification('Envoi du diagnostic...', 'info');
-    const { data, error } = await sendDiagnostic(payload);
-    if (error) {
-      console.error(error);
-      UI.afficherNotification('Erreur lors de l\'envoi', 'error');
-      return;
-    }
+  const { data: hist } = await fetchDiagnosticsByUser(currentUser?.id_utilisateur || 1);
+  if (hist) setDiagnosticsList(hist);
+  setCurrentTab('home');
+};
 
-    UI.afficherNotification('✅ Diagnostic envoyé !', 'success');
-    setPhotoPreview(null);
-    photoFileRef.current = null;
+// --- Validation commande
+const handleValiderCommande = async () => {
+  const modeEl = document.getElementById('payment-mode');
+  const mode = modeEl ? modeEl.value : 'especes';
+  const cart = Panier.loadCart();
+  const total = cart.reduce((s, p) => s + p.prix * p.quantite, 0);
 
-    const { data: hist } = await fetchDiagnosticsByUser(currentUser?.id_utilisateur || 1);
-    if (hist) setDiagnosticsList(hist);
-    setCurrentTab('home');
+  UI.afficherNotification('Validation commande...', 'info');
+  const lignes = cart.map(p => ({ id: p.id, quantite: p.quantite, prix: p.prix }));
+  const payload = {
+    id_agriculteur: currentUser?.id_utilisateur || 1,
+    montant_total: total,
+    mode_paiement: mode,
+    lignes
   };
 
-  // --- Validation commande
-  const handleValiderCommande = async () => {
-    const modeEl = document.getElementById('payment-mode');
-    const mode = modeEl ? modeEl.value : 'especes';
-    const cart = Panier.loadCart();
-    const total = cart.reduce((s, p) => s + p.prix * p.quantite, 0);
+  const { data, error } = await Commandes.createOrder(payload);
+  if (error) {
+    console.error(error);
+    UI.afficherNotification('Erreur commande', 'error');
+    return;
+  }
 
-    UI.afficherNotification('Validation commande...', 'info');
-    const lignes = cart.map(p => ({ id: p.id, quantite: p.quantite, prix: p.prix }));
-    const payload = { idagriculteur: currentUser?.idutilisateur || 1, montanttotal: total, modepaiement: mode, lignes };
-    const { data, error } = await Commandes.createOrder(payload);
-    if (error) {
-      console.error(error);
-      UI.afficherNotification('Erreur commande', 'error');
-      return;
-    }
+  Panier.clearCart();
+  setPanier([]);
+  UI.closeModal();
+  UI.afficherNotification('✅ Commande validée !', 'success');
+
+  // refresh commandes
+  try {
+    const supabase = await getSupabase();
+    const { data: cmds } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
+    if (cmds) setCommandesList(cmds);
+  } catch (e) { console.warn(e); }
+
+  setCurrentTab('commandes');
+};
+
+// --- PDF generation handler (défini en dehors de handleValiderCommande)
 const handleRequestPdf = async (id) => {
   if (!id) return;
-  // si déjà en cours, ignore
   if (pdfLoadingById[id]) return;
 
-  // lock
   setPdfLoadingById(prev => ({ ...prev, [id]: true }));
   UI.afficherNotification('Génération du PDF en cours...', 'info');
 
   try {
     const result = await requestDiagnosticPdf(id);
-    // ta fonction renvoie ok/fail wrappers ; gère les deux cas
-    // si tu utilises un pattern { ok: true, url } ou { ok: false, error }
-    if (result && result.ok && result.value) {
-      window.open(result.value, '_blank');
-      UI.afficherNotification('PDF prêt', 'success');
-    } else if (result && result.ok && result.url) {
-      window.open(result.url, '_blank');
+    // result is expected to be { data: url } or { error: ... } from the lib wrapper
+    if (result && result.data) {
+      window.open(result.data, '_blank');
       UI.afficherNotification('PDF prêt', 'success');
     } else if (result && result.error) {
       console.error('PDF error', result.error);
       UI.afficherNotification('Erreur génération PDF', 'error');
+    } else if (typeof result === 'string') {
+      // fallback if the lib returns a raw URL
+      window.open(result, '_blank');
+      UI.afficherNotification('PDF prêt', 'success');
     } else {
-      // fallback : si requestDiagnosticPdf renvoie string url directement
-      if (typeof result === 'string') {
-        window.open(result, '_blank');
-        UI.afficherNotification('PDF prêt', 'success');
-      } else {
-        UI.afficherNotification('Erreur génération PDF', 'error');
-        console.warn('requestDiagnosticPdf returned unexpected:', result);
-      }
+      UI.afficherNotification('Erreur génération PDF', 'error');
+      console.warn('requestDiagnosticPdf returned unexpected:', result);
     }
   } catch (e) {
     console.error('handleRequestPdf error', e);
     UI.afficherNotification('Erreur réseau lors de la génération PDF', 'error');
   } finally {
-    // unlock
     setPdfLoadingById(prev => {
       const copy = { ...prev };
       delete copy[id];
@@ -152,20 +166,6 @@ const handleRequestPdf = async (id) => {
     });
   }
 };
-    Panier.clearCart();
-    setPanier([]);
-    UI.closeModal();
-    UI.afficherNotification('✅ Commande validée !', 'success');
-
-    // refresh commandes
-    try {
-      const supabase = await getSupabase();
-      const { data: cmds } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
-      if (cmds) setCommandesList(cmds);
-    } catch (e) { console.warn(e); }
-
-    setCurrentTab('commandes');
-  };
 
   // --- Auth + init (robuste) : MutationObserver + onAuthStateChange v2 + cleanup
   useEffect(() => {

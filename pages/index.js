@@ -8,8 +8,7 @@ import * as Commandes from '../lib/commandes';
 import * as UI from '../lib/ui';
 import { sendDiagnostic, fetchDiagnosticsByUser } from '../lib/diagnostic';
 import { initRealtime } from '../lib/realtime';
-import { getSupabase, getCurrentUser } from '../lib/supabase-client';
-
+import { getSupabase, getCurrentUser, formatDate } from '../lib/supabase-client';
 export default function Home() {
   const [role, setRole] = useState('agriculteur');
   const [currentTab, setCurrentTab] = useState('home');

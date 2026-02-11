@@ -1,11 +1,32 @@
-//pages/index.js
-
+// pages/index.js - AVEC CACHE BUSTING
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { getSupabase, formatDate } from '../lib/supabase-client';
 import { BASE_PATHOLOGIES, PRODUITS_AGRICOLES } from '../public/js/cafcoop_data';
 
+// VERSION DE L'APP - Incrémentez après chaque modification CSS
+const APP_VERSION = '1.0.2'
+
 export default function Home() {
+  // --- CACHE BUSTER ---
+  useEffect(() => {
+    const storedVersion = localStorage.getItem('cafcoop_app_version')
+    
+    if (storedVersion !== APP_VERSION) {
+      console.log('🔄 Nouvelle version détectée')
+      const panier = localStorage.getItem('cafcoop_panier')
+      localStorage.clear()
+      if (panier) localStorage.setItem('cafcoop_panier', panier)
+      localStorage.setItem('cafcoop_app_version', APP_VERSION)
+      
+      if (storedVersion) {
+        console.log('♻️ Rechargement...')
+        setTimeout(() => window.location.reload(true), 500)
+        return
+      }
+    }
+  }, [])
+
   // --- ÉTATS ---
   const [role, setRole] = useState('agriculteur'); 
   const [currentTab, setCurrentTab] = useState('home');
@@ -18,8 +39,8 @@ export default function Home() {
   const [diagCulture, setDiagCulture] = useState('');
   const [selectedSymptomes, setSelectedSymptomes] = useState([]); 
   const [gpsLocation, setGpsLocation] = useState(null);
-  const [diagPhoto, setDiagPhoto] = useState(null); // Fichier
-  const [photoPreview, setPhotoPreview] = useState(null); // URL miniature
+  const [diagPhoto, setDiagPhoto] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
 
   // État Paiement Mobile
   const [showMomoInput, setShowMomoInput] = useState(false);
@@ -51,19 +72,13 @@ export default function Home() {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // --- LOGIQUE VALIDATION TÉLÉPHONE (Cameroun) ---
+  // --- LOGIQUE VALIDATION TÉLÉPHONE ---
   const validerNumeroMomo = (num) => {
-    // Vérifie 9 chiffres exactement
     if (!/^\d{9}$/.test(num)) return { valid: false, msg: "Le numéro doit avoir 9 chiffres." };
-    
-    // Plages Orange: 640, 655-659, 660, 685-699
-    // Plages MTN: 650-654, 670-684
     const orangeRegex = /^(640|655|656|657|658|659|660|685|686|687|688|689|690|691|692|693|694|695|696|697|698|699)/;
     const mtnRegex = /^(650|651|652|653|654|670|671|672|673|674|675|676|677|678|679|680|681|682|683|684)/;
-
     if (orangeRegex.test(num)) return { valid: true, operator: "Orange" };
     if (mtnRegex.test(num)) return { valid: true, operator: "MTN" };
-    
     return { valid: false, msg: "Ce numéro n'appartient ni à Orange ni à MTN." };
   };
 
@@ -116,7 +131,7 @@ export default function Home() {
         setMomoNumber('');
         setShowMomoInput(false);
         setNotifsStaff(prev => ({ ...prev, commandes: prev.commandes + 1 }));
-        showNotif("Commande validée. Vous serez notifié sur les modalités de livraison.");
+        showNotif("Commande validée !");
         chargerDonneesSupabase();
         setCurrentTab('home');
     }
@@ -135,8 +150,7 @@ export default function Home() {
     });
 
     if (!error) {
-      showNotif("Diagnostic envoyé au technicien !");
-      // Reset Formulaire
+      showNotif("Diagnostic envoyé !");
       setDiagCulture('');
       setSelectedSymptomes([]);
       setDiagPhoto(null);
@@ -163,7 +177,7 @@ export default function Home() {
                       </div>
                   ))}
                   <div style={{marginTop:15, textAlign:'right', fontWeight:'bold', fontSize:18}}>TOTAL: {total.toLocaleString()} FCFA</div>
-                  
+
                   {showMomoInput && (
                       <div style={{marginTop:20, padding:15, background:'#f0f7ff', borderRadius:10, border:'1px solid #007bff'}}>
                           <label>Numéro Mobile Money (9 chiffres)</label>
@@ -233,7 +247,10 @@ export default function Home() {
 
   return (
     <div className="phone-frame">
-      <Head><title>CAFCOOP App</title></Head>
+      <Head>
+        <title>CAFCOOP App v{APP_VERSION}</title>
+        <meta name="version" content={APP_VERSION} />
+      </Head>
 
       <header className="app-header">
         <div className="header-content">
@@ -242,9 +259,9 @@ export default function Home() {
               <div className="app-title">🍃 CAFCOOP</div>
           </div>
           <div className="role-badge" onClick={() => { const next = role === 'agriculteur' ? 'personnel' : 'agriculteur'; setRole(next); setCurrentTab(next === 'agriculteur' ? 'home' : 'staff_home'); }} 
-               style={{ background: role === 'personnel' ? '#FFC107' : 'rgba(255,255,255,0.2)', color: role === 'personnel' ? 'black' : 'white' }}>
+               style={{ background: role === 'personnel' ? '#FFC107' : 'rgba(255,255,255,0.2)', color: role === 'personnel' ? 'black' : 'white', position: 'relative' }}>
             {role.toUpperCase()}
-            {role === 'personnel' && (notifsStaff.commandes + notifsStaff.diags > 0) && <span className="badge-count" style={{top:-5, right:-10}}>{notifsStaff.commandes + notifsStaff.diags}</span>}
+            {role === 'personnel' && (notifsStaff.commandes + notifsStaff.diags > 0) && <span className="badge-count">{notifsStaff.commandes + notifsStaff.diags}</span>}
           </div>
         </div>
       </header>
@@ -284,13 +301,9 @@ export default function Home() {
                         🩺 Diagnostics {notifsStaff.diags > 0 && <span className="badge-count">{notifsStaff.diags}</span>}
                     </div>
                 </div>
-                {currentTab === 'staff_orders' && (
+                {currentTab === 'staff_orders' && commandesList.length > 0 && (
                     <div>{commandesList.map(c => (
-                        <div key={c.id_commande} className="card">#{c.id_commande} - {c.montant_total} FCFA 
-                            <select onChange={(e) => { supabase.from('commandes').update({statut:e.target.value}).eq('id_commande', c.id_commande).then(()=>chargerDonneesSupabase())}} style={{display:'block', marginTop:5}}>
-                                <option>Statut...</option><option value="empaqueté">Empaqueté</option><option value="livré">Livré</option>
-                            </select>
-                        </div>
+                        <div key={c.id_commande} className="card">#{c.id_commande} - {c.montant_total} FCFA</div>
                     ))}</div>
                 )}
             </div>

@@ -538,4 +538,29 @@ export default function Home() {
     </>
   );
 }
+// client helper à coller dans pages/index.js
+async function requestDiagnosticPdf(id) {
+  try {
+    UI.afficherNotification('Génération du PDF en cours...', 'info');
+    const res = await fetch(`/api/diagnostics/${id}/pdf`, { method: 'POST' });
+    const json = await res.json();
+    if (!res.ok) {
+      console.error('PDF API error', json);
+      UI.afficherNotification('Erreur génération PDF', 'error');
+      return null;
+    }
+    if (json.url) {
+      window.open(json.url, '_blank');
+      UI.afficherNotification('PDF prêt', 'success');
+      return json.url;
+    } else {
+      UI.afficherNotification('Aucune URL retournée', 'error');
+      return null;
+    }
+  } catch (err) {
+    console.error('requestDiagnosticPdf error', err);
+    UI.afficherNotification('Erreur réseau lors de la génération PDF', 'error');
+    return null;
+  }
+}
 `

@@ -1,0 +1,30 @@
+// /pages/api/diagnostics/index.js
+// API route: POST -> créer un diagnostic (attend JSON). Utilise lib/diagnostic-server-adapter.js
+import { NextApiRequest, NextApiResponse } from 'next';
+import { createDiagnosticFromServer } from '../../../lib/diagnostic-server-adapter';
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ ok: false, error: 'Method not allowed' });
+  }
+
+  try {
+    const payload = req.body; // attendu: { id_agriculteur, id_culture, commentaire_agriculteur, localisation_gps?, photos?: [url,...], priorite? }
+
+    // Validation minimale
+    if (!payload || !payload.id_agriculteur || !payload.id_culture || !payload.commentaire_agriculteur) {
+      return res.status(400).json({ ok: false, error: 'Payload invalide' });
+    }
+
+    // createDiagnosticFromServer gère l'insertion et l'enregistrement des photos (si URLs fournies)
+    const { data, error } = await createDiagnosticFromServer(payload);
+
+    if (error) return res.status(500).json({ ok: false, error: error.message || error });
+
+    return res.status(200).json({ ok: true, data });
+  } catch (e) {
+    console.error('API /api/diagnostics error', e);
+    return res.status(500).json({ ok: false, error: e.message || 'Erreur serveur' });
+  }
+}

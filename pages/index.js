@@ -1,392 +1,315 @@
-// pages/index.js - AVEC CACHE BUSTING
-import React, { useState, useEffect } from 'react';
+// /pages/index.js
+// Page Next.js qui orchestre les modules et remplace public/cafcoop_app.js
+import React, { useEffect, useState, useRef } from 'react';
 import Head from 'next/head';
-import { getSupabase, formatDate } from '../lib/supabase-client';
-import { BASE_PATHOLOGIES, PRODUITS_AGRICOLES } from '../public/js/cafcoop_data';
-//fonctions dans lib/diagnostic.js
-import { sendDiagnostic, fetchDiagnosticsByUser, findQuickSolutions } from '../lib/diagnostic';
-//import { getCurrentUserId } from '../lib/auth-helper'; // si tu as une utilité pour récupérer l'ID courant
-
-// VERSION DE L'APP - Incrémentez après chaque modification CSS
-const APP_VERSION = '1.0.2'
+import { listProducts, getProductById, formatProductForUI } from '../lib/boutique';
+import * as Panier from '../lib/panier';
+import * as Commandes from '../lib/commandes';
+import * as UI from '../lib/ui';
+import { sendDiagnostic, fetchDiagnosticsByUser } from '../lib/diagnostic';
+import { initRealtime } from '../lib/realtime';
+import { getSupabase, getCurrentUser } from '../lib/supabase-client';
 
 export default function Home() {
-  // --- CACHE BUSTER ---
-  useEffect(() => {
-    const storedVersion = localStorage.getItem('cafcoop_app_version')
-    
-    if (storedVersion !== APP_VERSION) {
-      console.log('🔄 Nouvelle version détectée')
-      const panier = localStorage.getItem('cafcoop_panier')
-      localStorage.clear()
-      if (panier) localStorage.setItem('cafcoop_panier', panier)
-      localStorage.setItem('cafcoop_app_version', APP_VERSION)
-      
-      if (storedVersion) {
-        console.log('♻️ Rechargement...')
-        setTimeout(() => window.location.reload(true), 500)
-        return
-      }
-    }
-  }, [])
-
-  // --- ÉTATS ---
-  const [role, setRole] = useState('agriculteur'); 
+  const [role, setRole] = useState('agriculteur');
   const [currentTab, setCurrentTab] = useState('home');
   const [panier, setPanier] = useState([]);
   const [diagnosticsList, setDiagnosticsList] = useState([]);
   const [commandesList, setCommandesList] = useState([]);
-  const [notifsStaff, setNotifsStaff] = useState({ commandes: 0, diags: 0 });
-
-  // États Formulaires
-  const [diagCulture, setDiagCulture] = useState('');
-  const [selectedSymptomes, setSelectedSymptomes] = useState([]); 
-  const [gpsLocation, setGpsLocation] = useState(null);
-  const [diagPhoto, setDiagPhoto] = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(null);
-
-  // État Paiement Mobile
-  const [showMomoInput, setShowMomoInput] = useState(false);
-  const [momoNumber, setMomoNumber] = useState('');
-
-  // États UI
-  const [showProductModal, setShowProductModal] = useState(false);
+  const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [productQuantity, setProductQuantity] = useState(1);
-  const [notification, setNotification] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const photoFileRef = useRef(null);
+  const [currentUser, setCurrentUser] = useState(null);
 
-  // --- INIT ---
   useEffect(() => {
-    const savedCart = localStorage.getItem('cafcoop_panier');
-    if (savedCart) setPanier(JSON.parse(savedCart));
-    chargerDonneesSupabase();
-  }, [role]);
-const { data, error } = await fetchDiagnosticsByUser(currentUserId);
-    if (!error && data) setDiagnosticsList(data);
-  const chargerDonneesSupabase = async () => {
-    const supabase = await getSupabase();
-    const { data: diagData } = await supabase.from('diagnostics').select('*').order('date_creation', { ascending: false });
-    if(diagData) setDiagnosticsList(diagData);
-    const { data: cmdData } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
-    if(cmdData) setCommandesList(cmdData);
+    // initialisation client-side
+    setPanier(Panier.loadCart());
+    setProducts(listProducts());
+
+    (async () => {
+      await getSupabase(); // lazy init
+      const user = await getCurrentUser();
+      setCurrentUser(user || { id_utilisateur: 1 });
+
+      const { data: diags } = await fetchDiagnosticsByUser(user?.id_utilisateur || 1);
+      if (diags) setDiagnosticsList(diags);
+
+      const supaRealtime = await initRealtime(
+        (payload) => {
+          const d = payload.new;
+          setDiagnosticsList(prev => [{ id: d.id_diagnostic, producteur: d.commentaire_agriculteur || 'Utilisateur', culture: d.id_culture, symptomes: [], statut: 'En attente', date: new Date(d.date_creation).toLocaleString() }, ...prev]);
+          if (role === 'personnel') UI.afficherNotification('🔔 Nouveau diagnostic !', 'info');
+        },
+        (payload) => {
+          const c = payload.new;
+          setCommandesList(prev => [{ ...c }, ...prev]);
+        }
+      );
+    })();
+  }, []);
+
+  useEffect(() => {
+    // charger commandes initiales
+    (async () => {
+      try {
+        const supabase = await getSupabase();
+        const { data } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
+        if (data) setCommandesList(data);
+      } catch (e) { console.warn(e); }
+    })();
+  }, []);
+
+  // UI helpers
+  const updateCartSummary = () => {
+    setPanier(Panier.loadCart());
   };
 
-  const showNotif = (msg, type = 'success') => {
-    setNotification({ msg, type });
-    setTimeout(() => setNotification(null), 4000);
+  const handleVoirDetailProduit = (id) => {
+    const p = getProductById(id);
+    if (!p) return;
+    setSelectedProduct(formatProductForUI(p));
+    UI.openModal(renderProductModal(p));
   };
 
-  // --- LOGIQUE VALIDATION TÉLÉPHONE ---
-  const validerNumeroMomo = (num) => {
-    if (!/^\d{9}$/.test(num)) return { valid: false, msg: "Le numéro doit avoir 9 chiffres." };
-    const orangeRegex = /^(640|655|656|657|658|659|660|685|686|687|688|689|690|691|692|693|694|695|696|697|698|699)/;
-    const mtnRegex = /^(650|651|652|653|654|670|671|672|673|674|675|676|677|678|679|680|681|682|683|684)/;
-    if (orangeRegex.test(num)) return { valid: true, operator: "Orange" };
-    if (mtnRegex.test(num)) return { valid: true, operator: "MTN" };
-    return { valid: false, msg: "Ce numéro n'appartient ni à Orange ni à MTN." };
-  };
-
-  // --- LOGIQUE PHOTO ---
-  const handlePhotoChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setDiagPhoto(file);
-      setPhotoPreview(URL.createObjectURL(file));
-    }
-  };
-
-  // --- ACTIONS ---
-  const handleAddToCart = () => {
-    const exists = panier.find(p => p.id === selectedProduct.id);
-    let newCart = exists 
-      ? panier.map(p => p.id === selectedProduct.id ? { ...p, quantite: p.quantite + productQuantity } : p)
-      : [...panier, { ...selectedProduct, quantite: productQuantity }];
-    setPanier(newCart);
-    localStorage.setItem('cafcoop_panier', JSON.stringify(newCart));
-    setShowProductModal(false);
-    showNotif("Produit ajouté !");
-  };
-
-  const submitCommande = async (mode) => {
-    if (mode === 'MOMO' && !showMomoInput) {
-        setShowMomoInput(true);
-        return;
-    }
-    if (mode === 'MOMO') {
-        const check = validerNumeroMomo(momoNumber);
-        if (!check.valid) { showNotif(check.msg, "error"); return; }
-        showNotif(`Paiement ${check.operator} initié...`);
-    }
-
-    const total = panier.reduce((sum, p) => sum + (p.prix * p.quantite), 0);
-    const supabase = await getSupabase();
-    const { error } = await supabase.from('commandes').insert({
-        id_agriculteur: 1,
-        statut: 'en_attente',
-        montant_total: total,
-        mode_paiement: mode,
-        details_produits: panier.map(p => `${p.quantite}x ${p.nom}`).join(', '),
-        date_commande: new Date().toISOString()
-    });
-
-    if(!error) {
-        setPanier([]);
-        localStorage.removeItem('cafcoop_panier');
-        setMomoNumber('');
-        setShowMomoInput(false);
-        setNotifsStaff(prev => ({ ...prev, commandes: prev.commandes + 1 }));
-        showNotif("Commande validée !");
-        chargerDonneesSupabase();
-        setCurrentTab('home');
-    }
-  };
-
-/*  const submitDiagnostic = async () => {
-    if (!diagCulture || selectedSymptomes.length === 0) return;
-    const supabase = await getSupabase();
-    const { error } = await supabase.from('diagnostics').insert({
-      id_agriculteur: 1,
-      id_culture: diagCulture,
-      statut: 'en_attente',
-      commentaire_agriculteur: `Symptômes: ${selectedSymptomes.map(s => s.split(':')[1]).join(', ')}`,
-      localisation_gps: gpsLocation,
-      date_creation: new Date().toISOString()
-    });
-
-    if (!error) {
-      showNotif("Diagnostic envoyé !");
-      setDiagCulture('');
-      setSelectedSymptomes([]);
-      setDiagPhoto(null);
-      setPhotoPreview(null);
-      setGpsLocation(null);
-      setNotifsStaff(prev => ({ ...prev, diags: prev.diags + 1 }));
-      chargerDonneesSupabase();
-      setCurrentTab('home');
-    }
-  };
-*/
-
-const submitDiagnostic = async () => {
-  // validation minimale
-  if (!diagCulture || selectedSymptomes.length === 0) {
-    showNotif('Veuillez sélectionner la culture et au moins un symptôme.', 'error');
-    return;
-  }
-
-  // Récupère l'ID utilisateur courant (adapter selon ton auth)
-  const currentUserId = getCurrentUserId ? getCurrentUserId() : 1; // fallback 1 si dev
-
-  const payload = {
-    id_agriculteur: currentUserId,
-    id_culture: diagCulture,
-    commentaire_agriculteur: `Symptômes: ${selectedSymptomes.map(s => s.split(':')[1]).join(', ')}`,
-    localisation_gps: gpsLocation,
-    photos: diagPhoto ? [diagPhoto] : [],
-    priorite: 'normale'
-  };
-
-  // UI: indiquer envoi
-  showNotif('Envoi du diagnostic...', 'success');
-
-  const { data, error } = await sendDiagnostic(payload);
-
-  if (error) {
-    console.error('sendDiagnostic error', error);
-    showNotif('Erreur lors de l\'envoi du diagnostic.', 'error');
-    return;
-  }
-
-  // reset formulaire (tu fais déjà ça ailleurs)
-  setDiagCulture('');
-  setSelectedSymptomes([]);
-  setDiagPhoto(null);
-  setPhotoPreview(null);
-  setGpsLocation(null);
-
-  // rafraîchir l'historique localement
-  const { data: hist, error: histErr } = await fetchDiagnosticsByUser(currentUserId);
-  if (!histErr && hist) setDiagnosticsList(hist);
-
-  showNotif('Diagnostic envoyé !');
-  setCurrentTab('home');
-};
-
-  // --- RENDERERS ---
-  const renderPanier = () => {
-    const total = panier.reduce((sum, p) => sum + (p.prix * p.quantite), 0);
-    return (
-      <div className="fade-in" style={{paddingBottom: 120}}>
-          <h2>🛒 Validation Panier</h2>
-          {panier.length === 0 ? <p>Votre panier est vide.</p> : (
-              <div className="card">
-                  {panier.map(item => (
-                      <div key={item.id} style={{display:'flex', justifyContent:'space-between', borderBottom:'1px solid #eee', padding:'10px 0'}}>
-                          <span>{item.quantite}x {item.nom}</span>
-                          <span>{(item.prix * item.quantite).toLocaleString()} FCFA</span>
-                      </div>
-                  ))}
-                  <div style={{marginTop:15, textAlign:'right', fontWeight:'bold', fontSize:18}}>TOTAL: {total.toLocaleString()} FCFA</div>
-
-                  {showMomoInput && (
-                      <div style={{marginTop:20, padding:15, background:'#f0f7ff', borderRadius:10, border:'1px solid #007bff'}}>
-                          <label>Numéro Mobile Money (9 chiffres)</label>
-                          <input 
-                            type="text" 
-                            maxLength="9" 
-                            value={momoNumber} 
-                            onChange={(e) => setMomoNumber(e.target.value)}
-                            placeholder="Ex: 699001122"
-                            style={{width:'100%', padding:12, marginTop:8, fontSize:18, textAlign:'center', borderRadius:8, border:'1px solid #ccc'}}
-                          />
-                      </div>
-                  )}
-
-                  <div style={{marginTop:20, display:'flex', gap:10, flexDirection:'column'}}>
-                      <button className="action-btn primary" onClick={() => submitCommande('MOMO')}>
-                          {showMomoInput ? "Confirmer le paiement" : "📱 Mobile Money"}
-                      </button>
-                      <button className="action-btn" onClick={() => submitCommande('LIVRAISON')}>🏠 Payer à la livraison</button>
-                  </div>
-              </div>
-          )}
+  const renderProductModal = (p) => {
+    return `
+      <div class="modal-header">
+        <div class="modal-title">${p.image} ${p.nom}</div>
+        <div class="close-modal" onclick="document.getElementById('modal').classList.remove('active')">✕</div>
       </div>
-    );
+      <div style="font-size:24px; font-weight:700; color:var(--accent); margin:15px 0;">
+        ${p.prix.toLocaleString()} FCFA
+      </div>
+      <p>${p.description || ''}</p>
+      <div class="form-group" style="margin-top:20px;">
+        <label>Quantité</label>
+        <input type="number" id="product-quantity" value="1" min="1" style="width:100%; padding:12px; border:1px solid #ddd; border-radius:8px;">
+      </div>
+      <button class="btn btn-primary" id="modal-add-to-cart">🛒 Ajouter au panier</button>
+    `;
   };
 
-  const renderDiagForm = () => (
-    <div className="fade-in" style={{paddingBottom:120}}>
-        <h2>🩺 Nouveau Diagnostic</h2>
-        <div className="card">
-            <label>Culture :</label>
-            <select style={{width:'100%', padding:12, marginBottom:15}} value={diagCulture} onChange={(e) => { setDiagCulture(e.target.value); setSelectedSymptomes([]); }}>
-                <option value="">Choisir...</option>
-                {Object.keys(BASE_PATHOLOGIES).map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            {diagCulture && (
-                <div>
-                    <label>Symptômes observés :</label>
-                    {BASE_PATHOLOGIES[diagCulture].map((maladie, idx) => (
-                        <div key={idx} style={{margin:'10px 0', padding:10, background:'#f9f9f9', borderRadius:8}}>
-                            <strong>{maladie.nom}</strong>
-                            {maladie.symptomes.map((s, sIdx) => (
-                                <div key={sIdx} style={{display:'flex', gap:10, marginTop:8}}>
-                                    <input type="checkbox" id={`chk-${idx}-${sIdx}`} checked={selectedSymptomes.includes(`${maladie.nom}:${s}`)} 
-                                           onChange={(e) => {
-                                               const val = `${maladie.nom}:${s}`;
-                                               if(e.target.checked) setSelectedSymptomes([...selectedSymptomes, val]);
-                                               else setSelectedSymptomes(selectedSymptomes.filter(x => x !== val));
-                                           }} />
-                                    <label htmlFor={`chk-${idx}-${sIdx}`}>{s}</label>
-                                </div>
-                            ))}
-                        </div>
-                    ))}
-                    <div style={{marginTop:15}}>
-                        <label>📸 Ajouter une photo :</label>
-                        <input type="file" accept="image/*" onChange={handlePhotoChange} style={{display:'block', marginTop:5}} />
-                        {photoPreview && <img src={photoPreview} alt="Preview" style={{width:80, height:80, objectFit:'cover', marginTop:10, borderRadius:8, border:'2px solid var(--primary)'}} />}
-                    </div>
-                    <button type="button" onClick={() => { if(navigator.geolocation) navigator.geolocation.getCurrentPosition(p => { setGpsLocation(`${p.coords.latitude},${p.coords.longitude}`); showNotif("Position capturée"); })}} className="action-btn" style={{marginTop:15, fontSize:13}}>📍 {gpsLocation ? "Position OK" : "Capturer GPS"}</button>
-                    <button className="action-btn primary" style={{width:'100%', marginTop:20}} onClick={submitDiagnostic}>Envoyer le diagnostic</button>
-                </div>
-            )}
+  // expose a small bridge for modal button (since modal HTML is raw)
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.target && e.target.id === 'modal-add-to-cart' && selectedProduct) {
+        const qtyEl = document.getElementById('product-quantity');
+        const qty = qtyEl ? parseInt(qtyEl.value || '1', 10) : 1;
+        const newCart = Panier.addToCart(Panier.loadCart(), selectedProduct, qty);
+        setPanier([...newCart]);
+        UI.afficherNotification(`${selectedProduct.nom} ajouté`, 'success');
+        UI.closeModal();
+      }
+    };
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [selectedProduct]);
+
+  // Diagnostic handlers
+  const handleChargerPhoto = (file) => {
+    if (!file) return;
+    photoFileRef.current = file;
+    const reader = new FileReader();
+    reader.onload = (e) => setPhotoPreview(e.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleEnvoyerDiagnostic = async () => {
+    const cultureEl = document.getElementById('diag-culture');
+    const culture = cultureEl ? cultureEl.value : '';
+    const symptomes = Array.from(document.querySelectorAll('.chk-symp:checked')).map(c => c.value);
+    if (!culture || symptomes.length === 0) {
+      UI.afficherNotification('Veuillez sélectionner une culture et au moins un symptôme.', 'error');
+      return;
+    }
+
+    const payload = {
+      id_agriculteur: currentUser?.id_utilisateur || 1,
+      id_culture: culture,
+      commentaire_agriculteur: `${culture} - ${symptomes.join(', ')}`,
+      photos: photoFileRef.current ? [photoFileRef.current] : []
+    };
+
+    UI.afficherNotification('Envoi du diagnostic...', 'info');
+    const { data, error } = await sendDiagnostic(payload);
+    if (error) {
+      console.error(error);
+      UI.afficherNotification('Erreur lors de l\'envoi', 'error');
+      return;
+    }
+
+    UI.afficherNotification('✅ Diagnostic envoyé !', 'success');
+    setPhotoPreview(null);
+    photoFileRef.current = null;
+
+    const { data: hist } = await fetchDiagnosticsByUser(currentUser?.id_utilisateur || 1);
+    if (hist) setDiagnosticsList(hist);
+    setCurrentTab('home');
+  };
+
+  // Commande
+  const handleValiderCommande = async () => {
+    const modeEl = document.getElementById('payment-mode');
+    const mode = modeEl ? modeEl.value : 'especes';
+    const cart = Panier.loadCart();
+    const total = cart.reduce((s, p) => s + p.prix * p.quantite, 0);
+
+    UI.afficherNotification('Validation commande...', 'info');
+    const lignes = cart.map(p => ({ id: p.id, quantite: p.quantite, prix: p.prix }));
+    const payload = { id_agriculteur: currentUser?.id_utilisateur || 1, montant_total: total, mode_paiement: mode, lignes };
+    const { data, error } = await Commandes.createOrder(payload);
+    if (error) {
+      console.error(error);
+      UI.afficherNotification('Erreur commande', 'error');
+      return;
+    }
+
+    Panier.clearCart();
+    setPanier([]);
+    UI.closeModal();
+    UI.afficherNotification('✅ Commande validée !', 'success');
+
+    // refresh commandes
+    const supabase = await getSupabase();
+    const { data: cmds } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
+    if (cmds) setCommandesList(cmds);
+    setCurrentTab('commandes');
+  };
+
+  // Renderers (simplifiés, reprennent ton HTML existant)
+  const renderHome = () => (
+    <div className="fade-in">
+      <h2 style={{ textAlign: 'center', marginBottom: 20 }}>🍃 CAFCOOP</h2>
+      <div className="action-grid">
+        <div className="action-btn primary" onClick={() => setCurrentTab('boutique')}>🛒<span>Boutique</span></div>
+        <div className="action-btn primary" onClick={() => setCurrentTab('diagnostic')}>🩺<span>Diagnostic</span></div>
+        <div className="action-btn" onClick={() => setCurrentTab('commandes')}>📦<span>Commandes</span></div>
+        <div className="action-btn" onClick={() => setCurrentTab('profil')}>👤<span>Profil</span></div>
+      </div>
+    </div>
+  );
+
+  const renderBoutique = () => (
+    <div className="fade-in">
+      <h2>🛒 Boutique</h2>
+      {products.map(p => (
+        <div key={p.id} className="card product-card" onClick={() => handleVoirDetailProduit(p.id)}>
+          <div className="product-icon">{p.image}</div>
+          <div className="product-info">
+            <div className="product-name">{p.nom}</div>
+            <div className="product-price">{p.prix.toLocaleString()} FCFA</div>
+          </div>
         </div>
+      ))}
+    </div>
+  );
+
+  const renderDiagnostic = () => (
+    <div className="fade-in">
+      <h2>🩺 Diagnostic</h2>
+      {role === 'agriculteur' ? (
+        <>
+          <select id="diag-culture" onChange={() => {
+            const culture = document.getElementById('diag-culture').value;
+            const maladies = window.BASE_PATHOLOGIES ? window.BASE_PATHOLOGIES[culture] || [] : [];
+            const zone = document.getElementById('zone-symptomes');
+            if (!zone) return;
+            zone.innerHTML = maladies.map(m => `
+              <div class="card">
+                <strong>${m.nom}</strong>
+                ${m.symptomes.map(s => `<label style="display:block; margin:5px 0;"><input type="checkbox" class="chk-symp" value="${s}"> ${s}</label>`).join('')}
+              </div>
+            `).join('');
+          }} style={{ width: '100%', padding: 12, borderRadius: 8, border: '1px solid #ddd', marginBottom: 15 }}>
+            <option value="">-- Culture --</option>
+            {Object.keys(typeof window !== 'undefined' && window.BASE_PATHOLOGIES ? window.BASE_PATHOLOGIES : {}).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
+          <div id="zone-symptomes"></div>
+
+          <div id="zone-photo" style={{ marginTop: 12 }}>
+            <input type="file" accept="image/*" onChange={(e) => handleChargerPhoto(e.target.files[0])} />
+            {photoPreview && <div id="apercu-photo"><img src={photoPreview} style={{ width: 100, borderRadius: 8, marginTop: 10 }} /></div>}
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <button className="btn btn-primary" onClick={handleEnvoyerDiagnostic}>📤 Envoyer</button>
+          </div>
+        </>
+      ) : (
+        <div>
+          <h3>📋 Diagnostics ({diagnosticsList.length})</h3>
+          {diagnosticsList.map(d => (
+            <div key={d.id} className="card" style={{ borderLeft: `4px solid ${d.statut === 'En attente' ? 'orange' : 'green'}` }}>
+              <strong>{d.producteur}</strong><br />
+              <small>{d.date}</small><br />
+              <div className={`status-pill ${d.statut === 'En attente' ? 'status-pending' : 'status-ok'}`}>{d.statut}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderCommandes = () => (
+    <div className="fade-in">
+      <h2>📦 {role === 'agriculteur' ? 'Mes Commandes' : 'Gestion Commandes'}</h2>
+      {commandesList.map(c => (
+        <div key={c.id_commande || c.id} className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div><strong>#{c.id_commande || c.id}</strong></div>
+            <div style={{ fontWeight: 700 }}>{(c.montant_total || c.montant_total === 0) ? (c.montant_total).toLocaleString() + ' FCFA' : ''}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderProfil = () => (
+    <div className="fade-in">
+      <h2>👤 Profil</h2>
+      <div className="card">
+        <p><strong>Nom:</strong> {currentUser?.nom || 'Utilisateur DEMO'}</p>
+        <p><strong>Rôle:</strong> {role}</p>
+      </div>
     </div>
   );
 
   return (
-    <div className="phone-frame">
+    <>
       <Head>
-        <title>CAFCOOP App v{APP_VERSION}</title>
-        <meta name="version" content={APP_VERSION} />
+        <title>CAFCOOP App</title>
       </Head>
 
-      <header className="app-header">
-        <div className="header-content">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-             {currentTab !== 'home' && currentTab !== 'staff_home' && <button onClick={() => setCurrentTab(role === 'agriculteur' ? 'home' : 'staff_home')} style={{ background: 'none', border: 'none', fontSize: '24px', color: 'white' }}>⬅️</button>}
+      <div className="phone-frame">
+        <header className="app-header">
+          <div className="header-content">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div className="app-title">🍃 CAFCOOP</div>
+            </div>
+            <div id="current-role" className="role-badge" onClick={() => setRole(r => r === 'agriculteur' ? 'personnel' : 'agriculteur')} style={{ cursor: 'pointer' }}>
+              {role.toUpperCase()}
+            </div>
           </div>
-          <div className="role-badge" onClick={() => { const next = role === 'agriculteur' ? 'personnel' : 'agriculteur'; setRole(next); setCurrentTab(next === 'agriculteur' ? 'home' : 'staff_home'); }} 
-               style={{ background: role === 'personnel' ? '#FFC107' : 'rgba(255,255,255,0.2)', color: role === 'personnel' ? 'black' : 'white', position: 'relative' }}>
-            {role.toUpperCase()}
-            {role === 'personnel' && (notifsStaff.commandes + notifsStaff.diags > 0) && <span className="badge-count">{notifsStaff.commandes + notifsStaff.diags}</span>}
-          </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="content-area" style={{paddingBottom: '100px'}}>
-        {role === 'agriculteur' ? (
-            <>
-                {currentTab === 'home' && (
-                    <div className="action-grid">
-                        <div className="action-btn primary" onClick={() => setCurrentTab('boutique')}>🛒 Boutique</div>
-                        <div className="action-btn primary" onClick={() => setCurrentTab('diagnostic')}>🩺 Diagnostic</div>
-                        <div className="action-btn" onClick={() => setCurrentTab('commandes')}>📦 Commandes</div>
-                        <div className="action-btn" onClick={() => setCurrentTab('profil')}>👤 Profil</div>
-                    </div>
-                )}
-                {currentTab === 'boutique' && (
-                    <div className="fade-in">
-                        {PRODUITS_AGRICOLES.map(p => (
-                            <div key={p.id} className="card product-card" onClick={() => { setSelectedProduct(p); setProductQuantity(1); setShowProductModal(true); }}>
-                                <span>{p.image} {p.nom}</span>
-                                <strong>{p.prix} FCFA</strong>
-                            </div>
-                        ))}
-                    </div>
-                )}
-                {currentTab === 'panier' && renderPanier()}
-                {currentTab === 'diagnostic' && renderDiagForm()}
-            </>
-        ) : (
-            <div className="fade-in">
-                <h2>📊 Dashboard Staff</h2>
-                <div className="action-grid">
-                    <div className="action-btn primary" onClick={() => { setCurrentTab('staff_orders'); setNotifsStaff(p => ({...p, commandes:0})); }}>
-                        📦 Commandes {notifsStaff.commandes > 0 && <span className="badge-count">{notifsStaff.commandes}</span>}
-                    </div>
-                    <div className="action-btn primary" onClick={() => { setCurrentTab('staff_diags'); setNotifsStaff(p => ({...p, diags:0})); }}>
-                        🩺 Diagnostics {notifsStaff.diags > 0 && <span className="badge-count">{notifsStaff.diags}</span>}
-                    </div>
-                </div>
-                {currentTab === 'staff_orders' && commandesList.length > 0 && (
-                    <div>{commandesList.map(c => (
-                        <div key={c.id_commande} className="card">#{c.id_commande} - {c.montant_total} FCFA</div>
-                    ))}</div>
-                )}
-            </div>
-        )}
-      </main>
+        <main className="content-area" style={{ paddingBottom: 100 }}>
+          {currentTab === 'home' && renderHome()}
+          {currentTab === 'boutique' && renderBoutique()}
+          {currentTab === 'diagnostic' && renderDiagnostic()}
+          {currentTab === 'commandes' && renderCommandes()}
+          {currentTab === 'profil' && renderProfil()}
+        </main>
 
-      {role === 'agriculteur' && (
-          <nav className="bottom-nav">
-            <div className={`nav-item ${currentTab === 'home' ? 'active' : ''}`} onClick={() => setCurrentTab('home')}>🏠<span>Accueil</span></div>
-            <div className={`nav-item ${currentTab === 'boutique' ? 'active' : ''}`} onClick={() => setCurrentTab('boutique')}>🛒<span>Achats</span></div>
-            <div className={`nav-item ${currentTab === 'panier' ? 'active' : ''}`} onClick={() => setCurrentTab('panier')}>
-                <div style={{position:'relative'}}>🧺{panier.length > 0 && <span className="badge-count">{panier.length}</span>}</div>
-                <span>Panier</span>
-            </div>
-          </nav>
-      )}
+        <nav className="bottom-nav">
+          <div className={`nav-item ${currentTab === 'home' ? 'active' : ''}`} onClick={() => setCurrentTab('home')}>🏠<span>Accueil</span></div>
+          <div className={`nav-item ${currentTab === 'boutique' ? 'active' : ''}`} onClick={() => setCurrentTab('boutique')}>🛒<span>Achats</span></div>
+          <div className={`nav-item ${currentTab === 'panier' ? 'active' : ''}`} onClick={() => setCurrentTab('panier')}>🧺<span>Panier</span></div>
+        </nav>
+      </div>
 
-      {showProductModal && selectedProduct && (
-        <div className="modal active">
-            <div className="card">
-                <h2>{selectedProduct.nom}</h2>
-                <div style={{display:'flex', justifyContent:'center', gap:15, margin:'20px 0'}}>
-                    <button className="action-btn" onClick={() => setProductQuantity(Math.max(1, productQuantity - 1))}>-</button>
-                    <span style={{fontSize:22}}>{productQuantity}</span>
-                    <button className="action-btn" onClick={() => setProductQuantity(productQuantity + 1)}>+</button>
-                </div>
-                <button className="action-btn primary" style={{width:'100%'}} onClick={handleAddToCart}>Ajouter</button>
-                <button onClick={() => setShowProductModal(false)} style={{marginTop:10, background:'none', border:'none', color:'#666'}}>Annuler</button>
-            </div>
-        </div>
-      )}
-
-      {notification && <div className={`notification show`} style={{background: notification.type === 'error' ? '#D32F2F' : '#4CAF50'}}>{notification.msg}</div>}
-    </div>
+      <div id="modal" className="modal"><div id="modal-content"></div></div>
+    </>
   );
 }

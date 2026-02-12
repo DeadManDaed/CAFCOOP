@@ -327,128 +327,191 @@ useEffect(() => {
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
 
-  // --- postAuthInit
-  async function postAuthInit(uid) {
-    if (!uid) return;
-    try {
-      const supabase = await getSupabase();
+async function postAuthInit(uid) {
+  if (!uid) {
+    console.error('postAuthInit: uid manquant');
+    UI.afficherNotification('Erreur initialisation (pas d\'ID)', 'error');
+    return;
+  }
 
-      // récupérer le profil métier lié à id_auth
-      const { data: userRow, error: userErr } = await supabase
-        .from('utilisateurs')
-        .select('*')
-        .eq('id_auth', uid)
-        .maybeSingle();
-
-      if (userErr) {
-        console.error('Erreur récupération profil', userErr);
-        UI.afficherNotification('Erreur récupération profil', 'error');
-        return;
-      }
-
-      if (!userRow) {
-  // tentative de création automatique du profil côté serveur
   try {
-    const email = sessionUser?.email || '';
-    const resp = await fetch('/api/link-profile', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id_auth: uid, email, nom: '', prenom: '', role: 'agriculteur' })
-    });
-    const json = await resp.json();
-    if (resp.ok && json.ok && json.user) {
-      setCurrentUser(json.user);
-      setCurrentTab('profil');
-      UI.afficherNotification('Profil CAFCOOP créé automatiquement. Complétez vos informations.', 'success');
-      // charger diagnostics/commandes si nécessaire
-      return;
-    } else {
-      // fallback : afficher modal profil à compléter
-      setCurrentUser({ id_auth: uid, nom: '', prenom: '', email });
-      setCurrentTab('profil');
-      UI.afficherNotification('Profil CAFCOOP non trouvé. Complétez votre profil.', 'info');
+    const supabase = await getSupabase();
+
+    // Récupérer le profil métier lié à id_auth
+    const { data: userRow, error: userErr } = await supabase
+      .from('utilisateurs')
+      .select('*')
+      .eq('id_auth', uid)
+      .maybeSingle();
+
+    if (userErr) {
+      console.error('Erreur récupération profil:', userErr);
+      UI.afficherNotification('Erreur récupération profil', 'error');
       return;
     }
+
+    // --- BLOC CRÉATION PROFIL MANQUANT ---
+    if (!userRow) {
+      console.warn('Profil CAFCOOP introuvable pour uid:', uid);
+      
+      try {
+        // Récupérer l'email depuis auth.users
+        const { data: { user: authUser }, error: authErr } = await supabase.auth.getUser();
+        if (authErr || !authUser) {
+          console.error('Impossible de récupérer user auth:', authErr);
+          UI.afficherNotification('Erreur authentification', 'error');
+          return;
+        }
+
+        const email = authUser.email || '';
+        console.log('Tentative création profil pour:', email);
+
+        const resp = await fetch('/api/link-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            id_auth: uid, 
+            email, 
+            nom: '', 
+            prenom: '', 
+            role: 'agriculteur' 
+          })
+        });
+
+        const json = await resp.json();
+        
+        if (!resp.ok || !json.ok) {
+          console.error('link-profile failed:', json.error || resp.statusText);
+          throw new Error(json.error || 'Échec création profil');
+        }
+
+        if (json.user) {
+          setCurrentUser(json.user);
+          setCurrentTab('profil');
+          UI.afficherNotification('✅ Profil créé. Complétez vos informations.', 'success');
+          return; // Arrêt ici, l'utilisateur doit compléter son profil
+        }
+      } catch (e) {
+        console.error('Auto link-profile error:', e);
+        // Fallback : profil minimal client-side
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        setCurrentUser({ 
+          id_auth: uid, 
+          nom: '', 
+          prenom: '', 
+          email: authUser?.email || '' 
+        });
+        setCurrentTab('profil');
+        UI.afficherNotification('⚠️ Profil CAFCOOP non trouvé. Complétez votre profil.', 'info');
+        return;
+      }
+    }
+
+    // --- PROFIL EXISTANT : HYDRATATION ---
+    console.log('Profil CAFCOOP trouvé:', userRow);
+    setCurrentUser(userRow);
+
+    // Déterminer le rôle (staff override)
+    const { data: staffRows } = await supabase
+      .from('personnel_cafcoop')
+      .select('id_personnel')
+      .eq('id_utilisateur', userRow.id_utilisateur)
+      .limit(1);
+
+    const resolvedRole = (staffRows && staffRows.length) ? 'personnel' : (userRow.role || 'agriculteur');
+    setRole(resolvedRole);
+
+    // Charger panier & produits
+    try {
+      const localCart = Panier.loadCart();
+      setPanier(localCart);
+    } catch (e) { 
+      console.warn('panier load error', e); 
+    }
+
+    try {
+      const prods = listProducts();
+      setProducts(prods);
+    } catch (e) { 
+      console.warn('products load error', e); 
+    }
+
+    // Charger diagnostics
+    try {
+      const { data: diags, error: diagErr } = await fetchDiagnosticsByUser(userRow.id_utilisateur);
+      if (diagErr) {
+        console.warn('fetchDiagnosticsByUser error', diagErr);
+      }
+      if (diags) {
+        setDiagnosticsList(diags);
+      }
+    } catch (e) { 
+      console.warn('diagnostics load error', e); 
+    }
+
+    // Charger commandes (CORRECTION NOM COLONNE)
+    try {
+      if (resolvedRole === 'personnel') {
+        const { data: cmds, error: cmdsErr } = await supabase
+          .from('commandes')
+          .select('*')
+          .order('date_commande', { ascending: false });
+        
+        if (cmdsErr) console.warn('fetch commandes error', cmdsErr);
+        if (cmds) setCommandesList(cmds);
+      } else {
+        // ⚠️ VÉRIFIE LE NOM EXACT DE LA COLONNE DANS TA TABLE
+        // Selon ton JSON: "idagriculteur" (pas de underscore)
+        const { data: cmds, error: cmdsErr } = await supabase
+          .from('commandes')
+          .select('*')
+          .eq('idagriculteur', userRow.id_utilisateur) // ← CORRIGÉ
+          .order('date_commande', { ascending: false });
+        
+        if (cmdsErr) console.warn('fetch commandes error', cmdsErr);
+        if (cmds) setCommandesList(cmds);
+      }
+    } catch (e) { 
+      console.warn('commandes load error', e); 
+    }
+
+    // Init realtime subscriptions
+    try {
+      await initRealtime(
+        (payload) => {
+          const d = payload.new;
+          setDiagnosticsList(prev => [
+            { 
+              id: d.id_diagnostic, 
+              producteur: d.commentaire_agriculteur || 'Utilisateur', 
+              culture: d.id_culture, 
+              symptomes: [], 
+              statut: 'En attente', 
+              date: formatDate(d.date_creation) 
+            }, 
+            ...prev
+          ]);
+          if (resolvedRole === 'personnel') {
+            UI.afficherNotification('🔔 Nouveau diagnostic !', 'info');
+          }
+        },
+        (payload) => {
+          const c = payload.new;
+          setCommandesList(prev => [{ ...c }, ...prev]);
+        }
+      );
+    } catch (e) {
+      console.warn('initRealtime error', e);
+    }
+
+    UI.afficherNotification(`Bienvenue ${userRow.nom || userRow.prenom || 'utilisateur'}`, 'success');
+    
   } catch (e) {
-    console.warn('Auto link profile failed', e);
-    setCurrentUser({ id_auth: uid, nom: '', prenom: '', email: sessionUser?.email || '' });
-    setCurrentTab('profil');
-    UI.afficherNotification('Profil CAFCOOP non trouvé. Complétez votre profil.', 'info');
-    return;
+    console.error('postAuthInit FATAL error:', e);
+    UI.afficherNotification('Erreur initialisation', 'error');
   }
 }
 
-      // hydrate state
-      setCurrentUser && setCurrentUser(userRow);
-
-      // determine role (staff override)
-      const { data: staffRows } = await supabase
-        .from('personnel_cafcoop')
-        .select('id_personnel')
-        .eq('id_utilisateur', userRow.id_utilisateur)
-        .limit(1);
-
-      const resolvedRole = (staffRows && staffRows.length) ? 'personnel' : (userRow.role || 'agriculteur');
-      setRole && setRole(resolvedRole);
-
-      // load panier & products
-      try {
-        const localCart = Panier.loadCart();
-        setPanier && setPanier(localCart);
-      } catch (e) { console.warn('panier load error', e); }
-
-      try {
-        const prods = listProducts();
-        setProducts && setProducts(prods);
-      } catch (e) { console.warn('products load error', e); }
-
-      // load diagnostics for user
-      try {
-        const { data: diags, error: diagErr } = await fetchDiagnosticsByUser(userRow.id_utilisateur);
-        if (diagErr) console.warn('fetchDiagnosticsByUser error', diagErr);
-        if (diags) setDiagnosticsList && setDiagnosticsList(diags);
-      } catch (e) { console.warn('diagnostics load error', e); }
-
-      // load commandes for user (or all if staff)
-      try {
-        if (resolvedRole === 'personnel') {
-          const { data: cmds, error: cmdsErr } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
-          if (cmdsErr) console.warn('fetch commandes error', cmdsErr);
-          if (cmds) setCommandesList && setCommandesList(cmds);
-        } else {
-          const { data: cmds, error: cmdsErr } = await supabase
-            .from('commandes')
-            .select('*')
-            .eq('id_agriculteur', userRow.id_utilisateur) // Correction nom colonne
-            .order('date_commande', { ascending: false });
-          if (cmdsErr) console.warn('fetch commandes error', cmdsErr);
-          if (cmds) setCommandesList && setCommandesList(cmds);
-        }
-      } catch (e) { console.warn('commandes load error', e); }
-
-      // init realtime subscriptions
-      try {
-        await initRealtime(
-          (payload) => {
-            const d = payload.new;
-            setDiagnosticsList(prev => [{ id: d.id_diagnostic, producteur: d.commentaire_agriculteur || 'Utilisateur', culture: d.id_culture, symptomes: [], statut: 'En attente', date: formatDate(d.date_creation) }, ...prev]);
-            if (resolvedRole === 'personnel') UI.afficherNotification('🔔 Nouveau diagnostic !', 'info');
-          },
-          (payload) => {
-            const c = payload.new;
-            setCommandesList(prev => [{ ...c }, ...prev]);
-          }
-        );
-      } catch (e) {
-        console.warn('initRealtime error', e);
-      }
-
-      UI.afficherNotification(`Bienvenue ${userRow.nom || ''}`, 'success'); // CORRIGÉ: backticks
-    } catch (e) {
-      console.error('postAuthInit error', e);
-      UI.afficherNotification('Erreur initialisation', 'error');
-    }
-  }
 
   // --- Renderers
   const renderHome = () => (

@@ -347,11 +347,36 @@ useEffect(() => {
       }
 
       if (!userRow) {
-        UI.afficherNotification('Profil CAFCOOP non trouvé. Complétez votre profil.', 'info');
-        setCurrentTab && setCurrentTab('profil');
-        setCurrentUser && setCurrentUser({ id_auth: uid, nom: '', prenom: '', email: '' });
-        return;
-      }
+  // tentative de création automatique du profil côté serveur
+  try {
+    const email = sessionUser?.email || '';
+    const resp = await fetch('/api/link-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_auth: uid, email, nom: '', prenom: '', role: 'agriculteur' })
+    });
+    const json = await resp.json();
+    if (resp.ok && json.ok && json.user) {
+      setCurrentUser(json.user);
+      setCurrentTab('profil');
+      UI.afficherNotification('Profil CAFCOOP créé automatiquement. Complétez vos informations.', 'success');
+      // charger diagnostics/commandes si nécessaire
+      return;
+    } else {
+      // fallback : afficher modal profil à compléter
+      setCurrentUser({ id_auth: uid, nom: '', prenom: '', email });
+      setCurrentTab('profil');
+      UI.afficherNotification('Profil CAFCOOP non trouvé. Complétez votre profil.', 'info');
+      return;
+    }
+  } catch (e) {
+    console.warn('Auto link profile failed', e);
+    setCurrentUser({ id_auth: uid, nom: '', prenom: '', email: sessionUser?.email || '' });
+    setCurrentTab('profil');
+    UI.afficherNotification('Profil CAFCOOP non trouvé. Complétez votre profil.', 'info');
+    return;
+  }
+}
 
       // hydrate state
       setCurrentUser && setCurrentUser(userRow);

@@ -513,10 +513,108 @@ const handleRequestPdf = async (id) => {
     </div>
   );
 
-  const renderProfil = () => (
+    const renderProfil = () => (
     <div className="fade-in">
       <h2>👤 Profil</h2>
       {currentUser ? (
         <div className="card">
           <p><strong>Nom:</strong> {currentUser.nom || 'Utilisateur DEMO'}</p>
-          <p><st
+          <p><strong>Rôle:</strong> {role}</p>
+        </div>
+      ) : (
+        <div className="card">
+          <p>Création de profil nécessaire. Complétez les informations ci‑dessous.</p>
+          {/ Formulaire de création de profil à implémenter (POST /api/link-profile) /}
+        </div>
+      )}
+    </div>
+  );
+
+  // --- Product modal renderer (raw HTML)
+  const renderProductModal = (p) => {
+    return `
+      <div class="modal-header">
+        <div class="modal-title">${p.image || ''} ${p.nom}</div>
+        <div class="close-modal" onclick="document.getElementById('modal').classList.remove('active')">✕</div>
+      </div>
+      <div style="font-size:20px; font-weight:700; color:var(--accent); margin:12px 0;">
+        ${p.prix.toLocaleString()} FCFA
+      </div>
+      <p>${p.description || ''}</p>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Quantité</label>
+        <input type="number" id="product-quantity" value="1" min="1" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+      </div>
+      <button class="btn btn-primary" id="modal-add-to-cart">🛒 Ajouter au panier</button>
+    `;
+  };
+
+  const handleVoirDetailProduit = (id) => {
+    const p = getProductById(id);
+    if (!p) return;
+    setSelectedProduct(formatProductForUI(p));
+    UI.openModal(renderProductModal(p));
+  };
+
+  return (
+    <>
+      <Head>
+        <title>CAFCOOP App</title>
+      </Head>
+
+      <div className="phone-frame">
+        <header className="app-header">
+          <div className="header-content">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div className="app-title">🍃 CAFCOOP</div>
+            </div>
+            <div id="current-role" className="role-badge" onClick={() => setRole(r => r === 'agriculteur' ? 'personnel' : 'agriculteur')} style={{ cursor: 'pointer' }}>
+              {role.toUpperCase()}
+            </div>
+          </div>
+        </header>
+
+        <main className="content-area" style={{ paddingBottom: 100 }}>
+          {currentTab === 'home' && renderHome()}
+          {currentTab === 'boutique' && renderBoutique()}
+          {currentTab === 'diagnostic' && renderDiagnostic()}
+          {currentTab === 'commandes' && renderCommandes()}
+          {currentTab === 'profil' && renderProfil()}
+        </main>
+
+        <nav className="bottom-nav">
+          <div className={nav-item ${currentTab === 'home' ? 'active' : ''}} onClick={() => setCurrentTab('home')}>🏠<span>Accueil</span></div>
+          <div className={nav-item ${currentTab === 'boutique' ? 'active' : ''}} onClick={() => setCurrentTab('boutique')}>🛒<span>Achats</span></div>
+          <div className={nav-item ${currentTab === 'panier' ? 'active' : ''}} onClick={() => setCurrentTab('panier')}>🧺<span>Panier</span></div>
+        </nav>
+      </div>
+
+      <div id="modal" className="modal"><div id="modal-content"></div></div>
+    </>
+  );
+}
+// client helper à coller dans pages/index.js
+async function requestDiagnosticPdf(id) {
+  try {
+    UI.afficherNotification('Génération du PDF en cours...', 'info');
+    const res = await fetch(`/api/diagnostics/${id}/pdf`, { method: 'POST' });
+    const json = await res.json();
+    if (!res.ok) {
+      console.error('PDF API error', json);
+      UI.afficherNotification('Erreur génération PDF', 'error');
+      return null;
+    }
+    if (json.url) {
+      window.open(json.url, '_blank');
+      UI.afficherNotification('PDF prêt', 'success');
+      return json.url;
+    } else {
+      UI.afficherNotification('Aucune URL retournée', 'error');
+      return null;
+    }
+  } catch (err) {
+    console.error('requestDiagnosticPdf error', err);
+    UI.afficherNotification('Erreur réseau lors de la génération PDF', 'error');
+    return null;
+  }
+}

@@ -1,25 +1,21 @@
 // /pages/index.js
-// Page Next.js principale — orchestration des modules lib
-// Remplace public/cafcoop_app.js : gère l'auth, init realtime, panier, boutique, diagnostics, commandes, UI (modals/notifications).
-
 import React, { useEffect, useState, useRef } from 'react';
 import Head from 'next/head';
 import { listProducts, getProductById, formatProductForUI } from '../lib/boutique';
 import * as Panier from '../lib/panier';
 import * as Commandes from '../lib/commandes';
 import * as UI from '../lib/ui';
-import { sendDiagnostic, fetchDiagnosticsByUser } from '../lib/diagnostic';
+import { sendDiagnostic, fetchDiagnosticsByUser, requestDiagnosticPdf } from '../lib/diagnostic';
 import { initRealtime, unsubscribeRealtime } from '../lib/realtime';
 import { getSupabase, getCurrentUser, formatDate } from '../lib/supabase-client';
-import { requestDiagnosticPdf } from '../lib/diagnostic';
 
 export default function Home() {
-  // --- State (utilisé par postAuthInit)
+  // --- State
   const [role, setRole] = useState('agriculteur');
   const [currentTab, setCurrentTab] = useState('home');
   const [panier, setPanier] = useState([]);
   const [diagnosticsList, setDiagnosticsList] = useState([]);
-const [pdfLoadingById, setPdfLoadingById] = useState({});
+  const [pdfLoadingById, setPdfLoadingById] = useState({});
   const [commandesList, setCommandesList] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -27,147 +23,146 @@ const [pdfLoadingById, setPdfLoadingById] = useState({});
   const photoFileRef = useRef(null);
   const [currentUser, setCurrentUser] = useState(null);
 
-  // --- Initialisation légère (chargement UI non-auth)
+  // --- Initialisation légère
   useEffect(() => {
     setPanier(Panier.loadCart());
     setProducts(listProducts());
   }, []);
 
-  // --- Bridge pour modal produit (HTML brut)
- useEffect(() => {
-  const handler = (e) => {
-    if (e.target && e.target.id === 'modal-add-to-cart' && selectedProduct) {
-      const qtyEl = document.getElementById('product-quantity');
-      const qty = qtyEl ? parseInt(qtyEl.value || '1', 10) : 1;
-      const newCart = Panier.addToCart(Panier.loadCart(), selectedProduct, qty);
-      setPanier([...newCart]);
-      UI.afficherNotification(`${selectedProduct.nom} ajouté`, 'success');
-      UI.closeModal();
+  // --- Bridge pour modal produit
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.target && e.target.id === 'modal-add-to-cart' && selectedProduct) {
+        const qtyEl = document.getElementById('product-quantity');
+        const qty = qtyEl ? parseInt(qtyEl.value || '1', 10) : 1;
+        const newCart = Panier.addToCart(Panier.loadCart(), selectedProduct, qty);
+        setPanier([...newCart]);
+        UI.afficherNotification(`${selectedProduct.nom} ajouté`, 'success');
+        UI.closeModal();
+      }
+    };
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [selectedProduct]);
+
+  // --- Photo handlers
+  const handleChargerPhoto = (file) => {
+    if (!file) return;
+    photoFileRef.current = file;
+    const reader = new FileReader();
+    reader.onload = (e) => setPhotoPreview(e.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  // --- Envoi diagnostic
+  const handleEnvoyerDiagnostic = async () => {
+    const cultureEl = document.getElementById('diag-culture');
+    const culture = cultureEl ? cultureEl.value : '';
+    const symptomes = Array.from(document.querySelectorAll('.chk-symp:checked')).map(c => c.value);
+    if (!culture || symptomes.length === 0) {
+      UI.afficherNotification('Veuillez sélectionner une culture et au moins un symptôme.', 'error');
+      return;
+    }
+
+    const payload = {
+      id_agriculteur: currentUser?.id_utilisateur || 1,
+      id_culture: culture,
+      commentaire_agriculteur: `${culture} - ${symptomes.join(', ')}`,
+      photos: photoFileRef.current ? [photoFileRef.current] : []
+    };
+
+    UI.afficherNotification('Envoi du diagnostic...', 'info');
+    const { data, error } = await sendDiagnostic(payload);
+    if (error) {
+      console.error(error);
+      UI.afficherNotification('Erreur lors de l\'envoi', 'error');
+      return;
+    }
+
+    UI.afficherNotification('✅ Diagnostic envoyé !', 'success');
+    setPhotoPreview(null);
+    photoFileRef.current = null;
+
+    const { data: hist } = await fetchDiagnosticsByUser(currentUser?.id_utilisateur || 1);
+    if (hist) setDiagnosticsList(hist);
+    setCurrentTab('home');
+  };
+
+  // --- Validation commande
+  const handleValiderCommande = async () => {
+    const modeEl = document.getElementById('payment-mode');
+    const mode = modeEl ? modeEl.value : 'especes';
+    const cart = Panier.loadCart();
+    const total = cart.reduce((s, p) => s + p.prix * p.quantite, 0);
+
+    UI.afficherNotification('Validation commande...', 'info');
+    const lignes = cart.map(p => ({ id: p.id, quantite: p.quantite, prix: p.prix }));
+    const payload = {
+      id_agriculteur: currentUser?.id_utilisateur || 1,
+      montant_total: total,
+      mode_paiement: mode,
+      lignes
+    };
+
+    const { data, error } = await Commandes.createOrder(payload);
+    if (error) {
+      console.error(error);
+      UI.afficherNotification('Erreur commande', 'error');
+      return;
+    }
+
+    Panier.clearCart();
+    setPanier([]);
+    UI.closeModal();
+    UI.afficherNotification('✅ Commande validée !', 'success');
+
+    // refresh commandes
+    try {
+      const supabase = await getSupabase();
+      const { data: cmds } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
+      if (cmds) setCommandesList(cmds);
+    } catch (e) { console.warn(e); }
+
+    setCurrentTab('commandes');
+  };
+
+  // --- PDF generation handler
+  const handleRequestPdf = async (id) => {
+    if (!id) return;
+    if (pdfLoadingById[id]) return;
+
+    setPdfLoadingById(prev => ({ ...prev, [id]: true }));
+    UI.afficherNotification('Génération du PDF en cours...', 'info');
+
+    try {
+      // Utilise la fonction importée depuis '../lib/diagnostic'
+      const result = await requestDiagnosticPdf(id);
+
+      if (result && result.data) {
+        window.open(result.data, '_blank');
+        UI.afficherNotification('PDF prêt', 'success');
+      } else if (result && result.error) {
+        console.error('PDF error', result.error);
+        UI.afficherNotification('Erreur génération PDF', 'error');
+      } else if (typeof result === 'string') {
+        window.open(result, '_blank');
+        UI.afficherNotification('PDF prêt', 'success');
+      } else {
+        UI.afficherNotification('Erreur génération PDF', 'error');
+      }
+    } catch (e) {
+      console.error('handleRequestPdf error', e);
+      UI.afficherNotification('Erreur réseau lors de la génération PDF', 'error');
+    } finally {
+      setPdfLoadingById(prev => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
     }
   };
-  document.addEventListener('click', handler);
-  return () => document.removeEventListener('click', handler);
-}, [selectedProduct]);
 
-// --- Photo handlers
-const handleChargerPhoto = (file) => {
-  if (!file) return;
-  photoFileRef.current = file;
-  const reader = new FileReader();
-  reader.onload = (e) => setPhotoPreview(e.target.result);
-  reader.readAsDataURL(file);
-};
-
-// --- Envoi diagnostic
-const handleEnvoyerDiagnostic = async () => {
-  const cultureEl = document.getElementById('diag-culture');
-  const culture = cultureEl ? cultureEl.value : '';
-  const symptomes = Array.from(document.querySelectorAll('.chk-symp:checked')).map(c => c.value);
-  if (!culture || symptomes.length === 0) {
-    UI.afficherNotification('Veuillez sélectionner une culture et au moins un symptôme.', 'error');
-    return;
-  }
-
-  const payload = {
-    id_agriculteur: currentUser?.id_utilisateur || 1,
-    id_culture: culture,
-    commentaire_agriculteur: `${culture} - ${symptomes.join(', ')}`,
-    photos: photoFileRef.current ? [photoFileRef.current] : []
-  };
-
-  UI.afficherNotification('Envoi du diagnostic...', 'info');
-  const { data, error } = await sendDiagnostic(payload);
-  if (error) {
-    console.error(error);
-    UI.afficherNotification('Erreur lors de l\'envoi', 'error');
-    return;
-  }
-
-  UI.afficherNotification('✅ Diagnostic envoyé !', 'success');
-  setPhotoPreview(null);
-  photoFileRef.current = null;
-
-  const { data: hist } = await fetchDiagnosticsByUser(currentUser?.id_utilisateur || 1);
-  if (hist) setDiagnosticsList(hist);
-  setCurrentTab('home');
-};
-
-// --- Validation commande
-const handleValiderCommande = async () => {
-  const modeEl = document.getElementById('payment-mode');
-  const mode = modeEl ? modeEl.value : 'especes';
-  const cart = Panier.loadCart();
-  const total = cart.reduce((s, p) => s + p.prix * p.quantite, 0);
-
-  UI.afficherNotification('Validation commande...', 'info');
-  const lignes = cart.map(p => ({ id: p.id, quantite: p.quantite, prix: p.prix }));
-  const payload = {
-    id_agriculteur: currentUser?.id_utilisateur || 1,
-    montant_total: total,
-    mode_paiement: mode,
-    lignes
-  };
-
-  const { data, error } = await Commandes.createOrder(payload);
-  if (error) {
-    console.error(error);
-    UI.afficherNotification('Erreur commande', 'error');
-    return;
-  }
-
-  Panier.clearCart();
-  setPanier([]);
-  UI.closeModal();
-  UI.afficherNotification('✅ Commande validée !', 'success');
-
-  // refresh commandes
-  try {
-    const supabase = await getSupabase();
-    const { data: cmds } = await supabase.from('commandes').select('*').order('date_commande', { ascending: false });
-    if (cmds) setCommandesList(cmds);
-  } catch (e) { console.warn(e); }
-
-  setCurrentTab('commandes');
-};
-
-// --- PDF generation handler (défini en dehors de handleValiderCommande)
-const handleRequestPdf = async (id) => {
-  if (!id) return;
-  if (pdfLoadingById[id]) return;
-
-  setPdfLoadingById(prev => ({ ...prev, [id]: true }));
-  UI.afficherNotification('Génération du PDF en cours...', 'info');
-
-  try {
-    const result = await requestDiagnosticPdf(id);
-    // result is expected to be { data: url } or { error: ... } from the lib wrapper
-    if (result && result.data) {
-      window.open(result.data, '_blank');
-      UI.afficherNotification('PDF prêt', 'success');
-    } else if (result && result.error) {
-      console.error('PDF error', result.error);
-      UI.afficherNotification('Erreur génération PDF', 'error');
-    } else if (typeof result === 'string') {
-      // fallback if the lib returns a raw URL
-      window.open(result, '_blank');
-      UI.afficherNotification('PDF prêt', 'success');
-    } else {
-      UI.afficherNotification('Erreur génération PDF', 'error');
-      console.warn('requestDiagnosticPdf returned unexpected:', result);
-    }
-  } catch (e) {
-    console.error('handleRequestPdf error', e);
-    UI.afficherNotification('Erreur réseau lors de la génération PDF', 'error');
-  } finally {
-    setPdfLoadingById(prev => {
-      const copy = { ...prev };
-      delete copy[id];
-      return copy;
-    });
-  }
-};
-
-  // --- Auth + init (robuste) : MutationObserver + onAuthStateChange v2 + cleanup
+  // --- Auth + init (robuste)
   useEffect(() => {
     let removeModalListeners = null;
     let authListener = null;
@@ -275,10 +270,7 @@ const handleRequestPdf = async (id) => {
           </div>
         `;
         UI.openModal(html);
-
         attachModalHandlers(client);
-
-        // Supabase v2 onAuthStateChange pattern
         const { data } = client.auth.onAuthStateChange(async (event, sessionData) => {
           if (sessionData?.session) {
             UI.closeModal();
@@ -314,7 +306,7 @@ const handleRequestPdf = async (id) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- postAuthInit : défini dans le scope du composant pour accéder aux setters
+  // --- postAuthInit
   async function postAuthInit(uid) {
     if (!uid) return;
     try {
@@ -336,7 +328,6 @@ const handleRequestPdf = async (id) => {
       if (!userRow) {
         UI.afficherNotification('Profil CAFCOOP non trouvé. Complétez votre profil.', 'info');
         setCurrentTab && setCurrentTab('profil');
-        // placeholder minimal pour permettre au formulaire de création de profil de s'afficher
         setCurrentUser && setCurrentUser({ id_auth: uid, nom: '', prenom: '', email: '' });
         return;
       }
@@ -348,7 +339,7 @@ const handleRequestPdf = async (id) => {
       const { data: staffRows } = await supabase
         .from('personnel_cafcoop')
         .select('id_personnel')
-        .eq('idutilisateur', userRow.idutilisateur)
+        .eq('id_utilisateur', userRow.id_utilisateur)
         .limit(1);
 
       const resolvedRole = (staffRows && staffRows.length) ? 'personnel' : (userRow.role || 'agriculteur');
@@ -382,19 +373,19 @@ const handleRequestPdf = async (id) => {
           const { data: cmds, error: cmdsErr } = await supabase
             .from('commandes')
             .select('*')
-            .eq('idagriculteur', userRow.idutilisateur)
+            .eq('id_agriculteur', userRow.id_utilisateur) // Correction nom colonne
             .order('date_commande', { ascending: false });
           if (cmdsErr) console.warn('fetch commandes error', cmdsErr);
           if (cmds) setCommandesList && setCommandesList(cmds);
         }
       } catch (e) { console.warn('commandes load error', e); }
 
-      // init realtime subscriptions (once user and role known)
+      // init realtime subscriptions
       try {
         await initRealtime(
           (payload) => {
             const d = payload.new;
-            setDiagnosticsList(prev => [{ id: d.iddiagnostic, producteur: d.commentaireagriculteur || 'Utilisateur', culture: d.idculture, symptomes: [], statut: 'En attente', date: formatDate(d.datecreation) }, ...prev]);
+            setDiagnosticsList(prev => [{ id: d.id_diagnostic, producteur: d.commentaire_agriculteur || 'Utilisateur', culture: d.id_culture, symptomes: [], statut: 'En attente', date: formatDate(d.date_creation) }, ...prev]);
             if (resolvedRole === 'personnel') UI.afficherNotification('🔔 Nouveau diagnostic !', 'info');
           },
           (payload) => {
@@ -406,14 +397,14 @@ const handleRequestPdf = async (id) => {
         console.warn('initRealtime error', e);
       }
 
-      UI.afficherNotification(Bienvenue ${userRow.nom || ''}, 'success');
+      UI.afficherNotification(`Bienvenue ${userRow.nom || ''}`, 'success'); // CORRIGÉ: backticks
     } catch (e) {
       console.error('postAuthInit error', e);
       UI.afficherNotification('Erreur initialisation', 'error');
     }
   }
 
-  // --- Renderers (simplifiés)
+  // --- Renderers
   const renderHome = () => (
     <div className="fade-in">
       <h2 style={{ textAlign: 'center', marginBottom: 20 }}>🍃 CAFCOOP</h2>
@@ -448,18 +439,19 @@ const handleRequestPdf = async (id) => {
         <>
           <select id="diag-culture" onChange={() => {
             const culture = document.getElementById('diag-culture').value;
-            const maladies = window.BASEPATHOLOGIES ? window.BASEPATHOLOGIES[culture] || [] : [];
+            const maladies = window.BASE_PATHOLOGIES ? window.BASE_PATHOLOGIES[culture] || [] : [];
             const zone = document.getElementById('zone-symptomes');
             if (!zone) return;
+            // CORRIGÉ : Conversion du JSX interne en String HTML pour innerHTML
             zone.innerHTML = maladies.map(m => `
               <div class="card">
                 <strong>${m.nom}</strong>
-                ${m.symptomes.map(s => <label style="display:block; margin:5px 0;"><input type="checkbox" class="chk-symp" value="${s}"> ${s}</label>).join('')}
+                ${m.symptomes.map(s => `<label style="display:block; margin:5px 0;"><input type="checkbox" class="chk-symp" value="${s}"> ${s}</label>`).join('')}
               </div>
             `).join('');
           }} style={{ width: '100%', padding: 12, borderRadius: 8, border: '1px solid #ddd', marginBottom: 15 }}>
             <option value="">-- Culture --</option>
-            {Object.keys(typeof window !== 'undefined' && window.BASEPATHOLOGIES ? window.BASEPATHOLOGIES : {}).map(c => <option key={c} value={c}>{c}</option>)}
+            {Object.keys(typeof window !== 'undefined' && window.BASE_PATHOLOGIES ? window.BASE_PATHOLOGIES : {}).map(c => <option key={c} value={c}>{c}</option>)}
           </select>
 
           <div id="zone-symptomes"></div>
@@ -477,26 +469,24 @@ const handleRequestPdf = async (id) => {
         <div>
           <h3>📋 Diagnostics ({diagnosticsList.length})</h3>
           {diagnosticsList.map(d => (
-            <div key={d.id} className="card" style={{ borderLeft: 4px solid ${d.statut === 'En attente' ? 'orange' : 'green'} }}>
+            <div key={d.id} className="card" style={{ borderLeft: `4px solid ${d.statut === 'En attente' ? 'orange' : 'green'}` }}>
               <strong>{d.producteur}</strong><br />
               <small>{d.date}</small><br />
-              <div className={status-pill ${d.statut === 'En attente' ? 'status-pending' : 'status-ok'}}>{d.statut}</div>
+              <div className={`status-pill ${d.statut === 'En attente' ? 'status-pending' : 'status-ok'}`}>
+                {d.statut}
+              </div>
+              <button
+                className="btn btn-outline"
+                onClick={() => handleRequestPdf(d.id_diagnostic || d.id)}
+                style={{ marginTop: 10, fontSize: '0.9em' }}
+              >
+                📄 {pdfLoadingById[d.id] || pdfLoadingById[d.id_diagnostic] ? 'Génération...' : 'PDF'}
+              </button>
             </div>
           ))}
         </div>
       )}
     </div>
-// Exemple à coller dans renderDiagnostic ou dans la carte détail d'un diagnostic
-// `d` est l'objet diagnostic courant, `role` est l'état role du composant
-
-{ /* Bouton pour générer le PDF d'un diagnostic */ }
-<button
-  className="btn btn-outline"
-  onClick={() => requestDiagnosticPdf(d.id_diagnostic || d.id)}
-  style={{ marginLeft: 8 }}
->
-  📄 Générer PDF
-</button>
   );
 
   const renderCommandes = () => (
@@ -506,7 +496,7 @@ const handleRequestPdf = async (id) => {
         <div key={c.id_commande || c.id} className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <div><strong>#{c.id_commande || c.id}</strong></div>
-            <div style={{ fontWeight: 700 }}>{(c.montanttotal || c.montanttotal === 0) ? (c.montant_total).toLocaleString() + ' FCFA' : ''}</div>
+            <div style={{ fontWeight: 700 }}>{(c.montant_total || c.montanttotal || c.montant_total === 0) ? (c.montant_total || c.montanttotal).toLocaleString() + ' FCFA' : ''}</div>
           </div>
         </div>
       ))}
@@ -516,15 +506,16 @@ const handleRequestPdf = async (id) => {
   const renderProfil = () => (
     <div className="fade-in">
       <h2>👤 Profil</h2>
-      {currentUser ? (
+      {currentUser && currentUser.nom ? (
         <div className="card">
-          <p><strong>Nom:</strong> {currentUser.nom || 'Utilisateur DEMO'}</p>
+          <p><strong>Nom:</strong> {currentUser.nom}</p>
           <p><strong>Rôle:</strong> {role}</p>
+          <p><small>{currentUser.email}</small></p>
         </div>
       ) : (
         <div className="card">
           <p>Création de profil nécessaire. Complétez les informations ci‑dessous.</p>
-          {/ Formulaire de création de profil à implémenter (POST /api/link-profile) /}
+          {/* Formulaire de création de profil à implémenter */}
         </div>
       )}
     </div>
@@ -583,38 +574,13 @@ const handleRequestPdf = async (id) => {
         </main>
 
         <nav className="bottom-nav">
-          <div className={nav-item ${currentTab === 'home' ? 'active' : ''}} onClick={() => setCurrentTab('home')}>🏠<span>Accueil</span></div>
-          <div className={nav-item ${currentTab === 'boutique' ? 'active' : ''}} onClick={() => setCurrentTab('boutique')}>🛒<span>Achats</span></div>
-          <div className={nav-item ${currentTab === 'panier' ? 'active' : ''}} onClick={() => setCurrentTab('panier')}>🧺<span>Panier</span></div>
+          <div className={`nav-item ${currentTab === 'home' ? 'active' : ''}`} onClick={() => setCurrentTab('home')}>🏠<span>Accueil</span></div>
+          <div className={`nav-item ${currentTab === 'boutique' ? 'active' : ''}`} onClick={() => setCurrentTab('boutique')}>🛒<span>Achats</span></div>
+          <div className={`nav-item ${currentTab === 'panier' ? 'active' : ''}`} onClick={() => setCurrentTab('panier')}>🧺<span>Panier</span></div>
         </nav>
       </div>
 
       <div id="modal" className="modal"><div id="modal-content"></div></div>
     </>
   );
-}
-// client helper à coller dans pages/index.js
-async function requestDiagnosticPdf(id) {
-  try {
-    UI.afficherNotification('Génération du PDF en cours...', 'info');
-    const res = await fetch(`/api/diagnostics/${id}/pdf`, { method: 'POST' });
-    const json = await res.json();
-    if (!res.ok) {
-      console.error('PDF API error', json);
-      UI.afficherNotification('Erreur génération PDF', 'error');
-      return null;
-    }
-    if (json.url) {
-      window.open(json.url, '_blank');
-      UI.afficherNotification('PDF prêt', 'success');
-      return json.url;
-    } else {
-      UI.afficherNotification('Aucune URL retournée', 'error');
-      return null;
-    }
-  } catch (err) {
-    console.error('requestDiagnosticPdf error', err);
-    UI.afficherNotification('Erreur réseau lors de la génération PDF', 'error');
-    return null;
-  }
-}
+} 

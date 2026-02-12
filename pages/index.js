@@ -22,7 +22,8 @@ export default function Home() {
   const [photoPreview, setPhotoPreview] = useState(null);
   const photoFileRef = useRef(null);
   const [currentUser, setCurrentUser] = useState(null);
-
+const [authChecked, setAuthChecked] = useState(false); // vérif initiale terminée
+const [isAuthenticated, setIsAuthenticated] = useState(false);
   // --- Initialisation légère
   useEffect(() => {
     setPanier(Panier.loadCart());
@@ -162,149 +163,169 @@ export default function Home() {
     }
   };
 
-  // --- Auth + init (robuste)
-  useEffect(() => {
-    let removeModalListeners = null;
-    let authListener = null;
-    let modalObserver = null;
-    let attachInterval = null;
 
-    const attachModalHandlers = (client) => {
-      const tryAttach = () => {
-        const loginBtn = document.getElementById('login-btn');
-        const magicBtn = document.getElementById('magic-btn');
-        const feedback = document.getElementById('login-feedback');
+useEffect(() => {
+  let removeModalListeners = null;
+  let authListener = null;
+  let modalObserver = null;
+  let attachInterval = null;
 
-        if (!loginBtn || !magicBtn || !feedback) return false;
+  const attachModalHandlers = (client) => {
+    const tryAttach = () => {
+      const loginBtn = document.getElementById('login-btn');
+      const magicBtn = document.getElementById('magic-btn');
+      const feedback = document.getElementById('login-feedback');
 
-        const onLogin = async () => {
-          try {
-            loginBtn.disabled = true;
-            feedback.innerText = 'Connexion...';
-            const email = document.getElementById('login-email').value;
-            const pass = document.getElementById('login-pass').value;
-            const { data, error } = await client.auth.signInWithPassword({ email, password: pass });
-            if (error) {
-              feedback.innerText = error.message || 'Erreur connexion';
-              UI.afficherNotification('Erreur connexion', 'error');
-              loginBtn.disabled = false;
-              return;
-            }
-            UI.closeModal();
-            await postAuthInit(data.session.user.id);
-          } catch (e) {
-            console.error('onLogin error', e);
-            feedback.innerText = 'Erreur réseau';
+      if (!loginBtn || !magicBtn || !feedback) return false;
+
+      const onLogin = async () => {
+        try {
+          loginBtn.disabled = true;
+          feedback.innerText = 'Connexion...';
+          const email = document.getElementById('login-email').value;
+          const pass = document.getElementById('login-pass').value;
+          const { data, error } = await client.auth.signInWithPassword({ email, password: pass });
+          if (error) {
+            feedback.innerText = error.message || 'Erreur connexion';
+            UI.afficherNotification('Erreur connexion', 'error');
             loginBtn.disabled = false;
+            return;
           }
-        };
-
-        const onMagic = async () => {
-          try {
-            magicBtn.disabled = true;
-            feedback.innerText = 'Envoi du lien magique...';
-            const email = document.getElementById('login-email').value;
-            const { data, error } = await client.auth.signInWithOtp({ email });
-            if (error) {
-              feedback.innerText = error.message || 'Erreur envoi lien';
-              UI.afficherNotification('Erreur', 'error');
-              magicBtn.disabled = false;
-              return;
-            }
-            feedback.innerText = 'Lien envoyé. Vérifie ta boîte mail.';
-            UI.afficherNotification('Lien magique envoyé', 'success');
-          } catch (e) {
-            console.error('onMagic error', e);
-            feedback.innerText = 'Erreur réseau';
-            magicBtn.disabled = false;
-          }
-        };
-
-        loginBtn.addEventListener('click', onLogin);
-        magicBtn.addEventListener('click', onMagic);
-
-        removeModalListeners = () => {
-          try { loginBtn.removeEventListener('click', onLogin); } catch (e) {}
-          try { magicBtn.removeEventListener('click', onMagic); } catch (e) {}
-        };
-
-        return true;
+          UI.closeModal();
+          // session available in data.session
+          setIsAuthenticated(true);
+          await postAuthInit(data.session.user.id);
+        } catch (e) {
+          console.error('onLogin error', e);
+          feedback.innerText = 'Erreur réseau';
+          loginBtn.disabled = false;
+        }
       };
 
-      const modalContent = document.getElementById('modal-content');
-      if (modalContent) {
-        modalObserver = new MutationObserver(() => {
-          if (tryAttach()) {
-            modalObserver.disconnect();
-            modalObserver = null;
+      const onMagic = async () => {
+        try {
+          magicBtn.disabled = true;
+          feedback.innerText = 'Envoi du lien magique...';
+          const email = document.getElementById('login-email').value;
+          const { data, error } = await client.auth.signInWithOtp({ email });
+          if (error) {
+            feedback.innerText = error.message || 'Erreur envoi lien';
+            UI.afficherNotification('Erreur', 'error');
+            magicBtn.disabled = false;
+            return;
           }
-        });
-        modalObserver.observe(modalContent, { childList: true, subtree: true });
-      }
-
-      let attempts = 0;
-      attachInterval = setInterval(() => {
-        attempts += 1;
-        if (tryAttach() || attempts > 8) {
-          clearInterval(attachInterval);
-          attachInterval = null;
+          feedback.innerText = 'Lien envoyé. Vérifie ta boîte mail.';
+          UI.afficherNotification('Lien magique envoyé', 'success');
+        } catch (e) {
+          console.error('onMagic error', e);
+          feedback.innerText = 'Erreur réseau';
+          magicBtn.disabled = false;
         }
-      }, 80);
+      };
+
+      loginBtn.addEventListener('click', onLogin);
+      magicBtn.addEventListener('click', onMagic);
+
+      removeModalListeners = () => {
+        try { loginBtn.removeEventListener('click', onLogin); } catch (e) {}
+        try { magicBtn.removeEventListener('click', onMagic); } catch (e) {}
+      };
+
+      return true;
     };
 
-    const checkAuthAndInit = async () => {
-      const client = await getSupabase();
-      const { data: { session } } = await client.auth.getSession();
+    const modalContent = document.getElementById('modal-content');
+    if (modalContent) {
+      modalObserver = new MutationObserver(() => {
+        if (tryAttach()) {
+          modalObserver.disconnect();
+          modalObserver = null;
+        }
+      });
+      modalObserver.observe(modalContent, { childList: true, subtree: true });
+    }
 
-      if (!session) {
-        const html = `
-          <div style="padding:16px;">
-            <h3>Connexion</h3>
-            <input id="login-email" placeholder="Email" style="width:100%; padding:8px; margin:8px 0;" />
-            <input id="login-pass" type="password" placeholder="Mot de passe" style="width:100%; padding:8px; margin:8px 0;" />
-            <div style="display:flex; gap:8px;">
-              <button id="login-btn" class="btn btn-primary">Se connecter</button>
-              <button id="magic-btn" class="btn">Magic link</button>
-            </div>
-            <div id="login-feedback" style="margin-top:8px; font-size:13px;"></div>
-          </div>
-        `;
-        UI.openModal(html);
-        attachModalHandlers(client);
-        const { data } = client.auth.onAuthStateChange(async (event, sessionData) => {
-          if (sessionData?.session) {
-            UI.closeModal();
-            await postAuthInit(sessionData.session.user.id);
-          }
-        });
-        authListener = data;
-      } else {
-        await postAuthInit(session.user.id);
-      }
-    };
-
-    checkAuthAndInit();
-
-    return () => {
-      if (removeModalListeners) {
-        try { removeModalListeners(); } catch (e) {}
-        removeModalListeners = null;
-      }
-      if (modalObserver) {
-        try { modalObserver.disconnect(); } catch (e) {}
-        modalObserver = null;
-      }
-      if (attachInterval) {
-        try { clearInterval(attachInterval); } catch (e) {}
+    let attempts = 0;
+    attachInterval = setInterval(() => {
+      attempts += 1;
+      if (tryAttach() || attempts > 8) {
+        clearInterval(attachInterval);
         attachInterval = null;
       }
-      if (authListener?.subscription?.unsubscribe) {
-        try { authListener.subscription.unsubscribe(); } catch (e) {}
-      }
-      try { unsubscribeRealtime(); } catch (e) {}
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    }, 80);
+  };
+
+  const checkAuthAndInit = async () => {
+    const client = await getSupabase();
+    const { data: { session } } = await client.auth.getSession();
+
+    if (!session) {
+      // pas de session : ouvrir modal et attacher handlers
+      const html = `
+        <div style="padding:16px;">
+          <h3>Connexion</h3>
+          <input id="login-email" placeholder="Email" style="width:100%; padding:8px; margin:8px 0;" />
+          <input id="login-pass" type="password" placeholder="Mot de passe" style="width:100%; padding:8px; margin:8px 0;" />
+          <div style="display:flex; gap:8px;">
+            <button id="login-btn" class="btn btn-primary">Se connecter</button>
+            <button id="magic-btn" class="btn">Magic link</button>
+          </div>
+          <div id="login-feedback" style="margin-top:8px; font-size:13px;"></div>
+        </div>
+      `;
+      UI.openModal(html);
+      attachModalHandlers(client);
+
+      // onAuthStateChange : login / logout
+      const { data } = client.auth.onAuthStateChange(async (event, sessionData) => {
+        if (sessionData?.session) {
+          UI.closeModal();
+          setIsAuthenticated(true);
+          await postAuthInit(sessionData.session.user.id);
+        } else {
+          // signed out
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          // show modal again
+          UI.openModal(html);
+          attachModalHandlers(client);
+        }
+      });
+      authListener = data;
+
+      // mark auth check done (no session)
+      setAuthChecked(true);
+      setIsAuthenticated(false);
+    } else {
+      // session existante : hydrate l'app
+      setIsAuthenticated(true);
+      await postAuthInit(session.user.id);
+      setAuthChecked(true);
+    }
+  };
+
+  checkAuthAndInit();
+
+  return () => {
+    if (removeModalListeners) {
+      try { removeModalListeners(); } catch (e) {}
+      removeModalListeners = null;
+    }
+    if (modalObserver) {
+      try { modalObserver.disconnect(); } catch (e) {}
+      modalObserver = null;
+    }
+    if (attachInterval) {
+      try { clearInterval(attachInterval); } catch (e) {}
+      attachInterval = null;
+    }
+    if (authListener?.subscription?.unsubscribe) {
+      try { authListener.subscription.unsubscribe(); } catch (e) {}
+    }
+    try { unsubscribeRealtime(); } catch (e) {}
+  };
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 
   // --- postAuthInit
   async function postAuthInit(uid) {
@@ -566,12 +587,46 @@ export default function Home() {
         </header>
 
         <main className="content-area" style={{ paddingBottom: 100 }}>
-          {currentTab === 'home' && renderHome()}
-          {currentTab === 'boutique' && renderBoutique()}
-          {currentTab === 'diagnostic' && renderDiagnostic()}
-          {currentTab === 'commandes' && renderCommandes()}
-          {currentTab === 'profil' && renderProfil()}
-        </main>
+  { !authChecked && (
+    <div style={{ padding: 20, textAlign: 'center' }}>
+      <div>Chargement...</div>
+    </div>
+  )}
+
+  { authChecked && !isAuthenticated && (
+    <div style={{ padding: 20, textAlign: 'center' }}>
+      <div>Veuillez vous connecter pour accéder à l'application.</div>
+      <div style={{ marginTop: 12 }}>
+        <button className="btn btn-primary" onClick={() => {
+          // ré-ouvrir modal si l'utilisateur a fermé
+          const html = `
+            <div style="padding:16px;">
+              <h3>Connexion</h3>
+              <input id="login-email" placeholder="Email" style="width:100%; padding:8px; margin:8px 0;" />
+              <input id="login-pass" type="password" placeholder="Mot de passe" style="width:100%; padding:8px; margin:8px 0;" />
+              <div style="display:flex; gap:8px;">
+                <button id="login-btn" class="btn btn-primary">Se connecter</button>
+                <button id="magic-btn" class="btn">Magic link</button>
+              </div>
+              <div id="login-feedback" style="margin-top:8px; font-size:13px;"></div>
+            </div>
+          `;
+          UI.openModal(html);
+        }}>Se connecter</button>
+      </div>
+    </div>
+  )}
+
+  { authChecked && isAuthenticated && (
+    <>
+      {currentTab === 'home' && renderHome()}
+      {currentTab === 'boutique' && renderBoutique()}
+      {currentTab === 'diagnostic' && renderDiagnostic()}
+      {currentTab === 'commandes' && renderCommandes()}
+      {currentTab === 'profil' && renderProfil()}
+    </>
+  )}
+</main>
 
         <nav className="bottom-nav">
           <div className={`nav-item ${currentTab === 'home' ? 'active' : ''}`} onClick={() => setCurrentTab('home')}>🏠<span>Accueil</span></div>

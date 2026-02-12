@@ -465,7 +465,7 @@ async function postAuthInit(uid) {
         const { data: cmds, error: cmdsErr } = await supabase
           .from('commandes')
           .select('*')
-          .eq('idagriculteur', userRow.id_utilisateur) // ← CORRIGÉ
+          .eq('id_agriculteur', userRow.id_utilisateur) // ← CORRIGÉ
           .order('date_commande', { ascending: false });
         
         if (cmdsErr) console.warn('fetch commandes error', cmdsErr);
